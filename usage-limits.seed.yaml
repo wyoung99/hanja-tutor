@@ -1,0 +1,239 @@
+# SUPERSEDED: 이 Seed의 내용은 hanja-tutor.seed.yaml v2(통합본)에 병합되었다. 실행에는 통합본을 사용한다.
+goal: Build the free-plan usage-limit system for the elementary-school Hanja exam-prep
+  and literacy chatbot PWA (한국어문회 levels 8–4, 대한검정회 levels 8–3). The system counts
+  usage per child profile for the chatbot (daily limit) and mock exams (weekly limit).
+  It reads limit values from configuration, locks only the feature that is over its
+  limit until the next reset, and sends subscription prompts to parents only. It handles
+  changes between subscription states and records the usage that decides 7-day refund
+  eligibility.
+task_type: code
+brownfield_context:
+  project_type: greenfield
+  context_references: []
+  existing_patterns: []
+  existing_dependencies: []
+constraints:
+- Free and paid plans differ by usage. A subscription means unlimited use plus detailed
+  reports.
+- Limit values must be changeable through configuration without any code change.
+- Usage is counted separately for each child profile, never added up across the guardian
+  account.
+- Daily limits reset at midnight KST.
+- Weekly limits reset at Monday 00:00 KST.
+- Failed chatbot responses do not count toward usage.
+- Chatbot questions have a daily limit. The beta default is 20 per day.
+- Mock exams have a weekly limit. The beta default is 1 per week.
+- A mock exam is deducted once, when it starts. Resuming the same exam does not deduct
+  again.
+- Leaving the app keeps the same mock exam resumable, and the exam is submitted automatically
+  when time runs out.
+- When a limit is reached, only that feature is locked until its next reset. All other
+  features stay usable.
+- The child's screen shows only a friendly 'see you again' notice (내일 또 만나요). Subscription
+  prompts go only to the parent screen and parent push notifications.
+- 'These stay unlimited on the free plan: 오늘의 한자 (today''s Hanja), review, tracing
+  practice (따라쓰기), the basic report (study time, today''s Hanja completion rate, review
+  accuracy), and the safety features (conversation viewing, usage time limits, harmful-input
+  alerts).'
+- 'Only subscribers get the detailed report: weak Hanja, mock exam score trend, pass
+  likelihood, number of Hanja completed in writing practice, and the weekly push summary.'
+- Safety and parental-supervision features are never put behind payment.
+- After Toss Payments confirms a payment, the limit lock is lifted within 1 minute.
+- When a subscription ends and the plan switches from paid to free, the current day's
+  and week's usage counters reset to 0.
+- If an operator raises a limit, it applies immediately. If an operator lowers a limit,
+  it applies from the next reset (midnight KST for daily, Monday 00:00 KST for weekly).
+- A refund is in full if paid features were not used within 7 days of payment.
+- 'For the refund check, paid-feature use means any of: a chatbot question beyond
+  the 20th in a day (over the free limit), a mock exam start beyond the first in the
+  same week (over the free limit), or viewing the detailed report.'
+- If any one child linked to the subscription used a paid feature, the subscription
+  counts as used.
+- During a subscription, usage is still counted per child profile, and use beyond
+  the free limits is recorded as evidence for the refund check.
+acceptance_criteria:
+- description: A free-plan child profile can ask the chatbot as many times as the
+    configured daily limit (beta default 20). Further questions are locked until the
+    next midnight KST. Failed chatbot responses do not count. Each sibling profile
+    has its own separate count.
+  semantic_ac_key: ac_763a4dfb1bc7e2dc
+  verify_exemption_reason: This interview did not fix the project's test framework
+    and file layout, so no exact test command can be named yet.
+- description: A free-plan child profile can start as many mock exams as the configured
+    weekly limit (beta default 1). Starting an exam uses up one start. Resuming the
+    same exam, including after leaving the app or after an automatic submit on timeout,
+    does not use up another. More starts are locked until Monday 00:00 KST.
+  semantic_ac_key: ac_f33dfcd4dc4eec86
+  verify_exemption_reason: This interview did not fix the project's test framework
+    and file layout, so no exact test command can be named yet.
+- description: When a feature is locked, only that feature becomes unavailable. 오늘의
+    한자, review, tracing practice, the basic report, and the safety features (conversation
+    viewing, usage time limits, harmful-input alerts) stay unlimited and usable on
+    the free plan.
+  semantic_ac_key: ac_4bb1f91285979bc8
+  verify_exemption_reason: This interview did not fix the project's test framework
+    and file layout, so no exact test command can be named yet.
+- description: When a limit is reached, the child's screen shows only a friendly 'see
+    you again' notice, with no subscription prompt. The subscription prompt appears
+    only on the parent screen and in parent push notifications.
+  semantic_ac_key: ac_bc79ae1219b96485
+  verify_exemption_reason: This interview did not fix the project's test framework
+    and file layout, so no exact test command can be named yet.
+- description: 'Only subscribers can see the detailed report: weak Hanja, mock exam
+    score trend, pass likelihood, number of Hanja completed in writing practice, and
+    the weekly push summary. Subscribers also have unlimited chatbot questions and
+    mock exams.'
+  semantic_ac_key: ac_aed6e7f2b2df7be5
+  verify_exemption_reason: This interview did not fix the project's test framework
+    and file layout, so no exact test command can be named yet.
+- description: After Toss Payments confirms a payment, the child's limit lock is lifted
+    within 1 minute.
+  semantic_ac_key: ac_a8e19884b7af96bb
+  verify_exemption_reason: This interview did not fix the project's test framework
+    and file layout, so no exact test command can be named yet.
+- description: When a subscription ends and the plan switches to free, that profile's
+    current daily and weekly usage counters start again from 0.
+  semantic_ac_key: ac_88e897d641db9345
+  verify_exemption_reason: This interview did not fix the project's test framework
+    and file layout, so no exact test command can be named yet.
+- description: Limit values can be changed in configuration without changing code.
+    A raised limit applies immediately. A lowered limit applies only from the next
+    reset (midnight KST for daily, Monday 00:00 KST for weekly), so a child is not
+    locked partway through.
+  semantic_ac_key: ac_ef9ae484af77af72
+  verify_exemption_reason: This interview did not fix the project's test framework
+    and file layout, so no exact test command can be named yet.
+- description: 'During a subscription, each child profile''s use beyond the free limits
+    is recorded. For any subscription, the system correctly decides 7-day refund eligibility:
+    if any linked child asked chatbot questions beyond the free daily limit, started
+    mock exams beyond the free weekly limit, or viewed the detailed report, the subscription
+    counts as used and is not eligible for a full refund.'
+  semantic_ac_key: ac_ba826b425ad9117e
+  verify_exemption_reason: This interview did not fix the project's test framework
+    and file layout, so no exact test command can be named yet.
+assumptions:
+- The tech stack, configuration file format and location, and test layout follow the
+  existing Seed draft hanja-tutor.seed.yaml and the PRD .ouroboros/pm.md. This interview
+  did not specify them.
+- The exact wording of the child-facing notice is not fixed. 내일 또 만나요 shows its tone.
+  A weekly mock exam lock may use wording that fits the weekly reset.
+- The refund check thresholds (21st chatbot question, 2nd mock exam start) follow
+  the configured free-limit values in effect, not hardcoded numbers.
+- '''Within 1 minute'' is measured from the moment the backend receives Toss Payments''
+  payment confirmation.'
+- When a limit is lowered and takes effect at the next reset, usage already made that
+  day or week is not taken back and causes no retroactive lock.
+ontology_schema:
+  name: FreePlanUsageLimits
+  description: The domain model for usage limits on a children's Hanja learning PWA.
+    It covers usage counted per child profile for limited features, reset windows
+    in KST, plan state on the guardian account, limit configuration, and the paid-usage
+    records that decide refund eligibility.
+  fields:
+  - name: child_profile_id
+    type: string
+    description: The child (learner) profile that usage is counted against
+    required: true
+  - name: guardian_account_id
+    type: string
+    description: The parent account that owns the subscription and receives subscription
+      prompts
+    required: true
+  - name: plan_state
+    type: string
+    description: Either free or subscribed. Changing from subscribed to free resets
+      the counters.
+    required: true
+  - name: limited_feature
+    type: string
+    description: Either chatbot_question (daily limit) or mock_exam_start (weekly
+      limit)
+    required: true
+  - name: limit_config
+    type: object
+    description: Limit values that can be changed in configuration (chatbot daily
+      default 20, mock exam weekly default 1), with the time each change takes effect
+    required: true
+  - name: usage_counter
+    type: number
+    description: Usage of a feature for one profile in the current window. Failed
+      chatbot responses are not counted.
+    required: true
+  - name: window_start
+    type: string
+    description: 'Start of the current window: midnight KST for daily, Monday 00:00
+      KST for weekly'
+    required: true
+  - name: locked_features
+    type: array
+    description: The features over their limit and locked until the next reset
+    required: true
+  - name: mock_exam_session
+    type: object
+    description: 'An exam in progress: deducted at start, can be resumed, submitted
+      automatically on timeout'
+    required: true
+  - name: payment_confirmed_at
+    type: string
+    description: The time Toss Payments confirmed the payment. The lock must be lifted
+      within 1 minute of it.
+    required: true
+  - name: paid_usage_events
+    type: array
+    description: Records of each over-limit chatbot question, over-limit mock exam
+      start, and detailed report view, per child, used to decide refund eligibility
+    required: true
+  - name: refund_eligible
+    type: boolean
+    description: True if no linked child used a paid feature within 7 days of payment
+    required: true
+evaluation_principles:
+- name: Child-safe monetization
+  description: Children never see subscription prompts. Safety and supervision features
+    are never put behind payment.
+  weight: 0.9
+- name: Limit correctness
+  description: Per-profile counts, KST reset boundaries, deduction at exam start,
+    and excluding failed responses all behave exactly as specified.
+  weight: 0.9
+- name: Configurability
+  description: Every limit value can be changed in configuration without code changes,
+    with raises applied immediately and lowers applied at the next reset.
+  weight: 0.8
+- name: Plan transition integrity
+  description: Unlocking within 1 minute after payment and resetting counters on paid-to-free
+    transitions both work reliably.
+  weight: 0.8
+- name: Refund auditability
+  description: Paid usage is recorded per child, so the 7-day refund decision is reproducible
+    and correct.
+  weight: 0.7
+- name: Scoped locking
+  description: A lock affects only the feature over its limit. All other learning
+    features stay available.
+  weight: 0.7
+exit_conditions:
+- name: All criteria met
+  description: Every acceptance criterion for the usage-limit system is shown to be
+    satisfied.
+  criteria: All acceptance criteria pass verification or evaluation.
+- name: Blocked by external dependency
+  description: The work cannot continue without Toss Payments integration details
+    or the stack decisions from the existing Seed draft.
+  criteria: A required external input is missing and cannot be inferred safely.
+- name: Spec conflict
+  description: The implementation exposes a contradiction between user-stated constraints
+    that needs a new user decision.
+  criteria: Two constraints cannot both be satisfied.
+metadata:
+  seed_id: seed_bb7452294236
+  version: 1.0.0
+  created_at: '2026-11-04T08:22:20.221690Z'
+  ambiguity_score: 0.142
+  gate_forced: false
+  interview_id: interview_20261104_080317
+  parent_seed_id: null
+  generation_mode: normal
+  degraded: false
+  unresolved_slots: []
+  recovery_reason: null
