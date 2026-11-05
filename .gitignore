@@ -25,3 +25,9 @@ venv/
 Thumbs.db
 .vscode/
 .idea/
+
+# Python test cache / build
+*.tsbuildinfo
+next-env.d.ts
+test-results/
+playwright-report/

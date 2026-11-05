@@ -1,0 +1,190 @@
+"""Mock exam sessions: format-exact generation, resume, wall-clock timer, auto-submit, scoring, review feed.
+
+The deadline is absolute (started_at + format minutes), so leaving the app never pauses the
+timer. Every read/write first applies expiry: an expired, unsubmitted exam is auto-submitted at
+its deadline with whatever answers were saved. `charge` (usage deduction) runs exactly once per
+newly started exam, after generation succeeded, and never on resume or auto-submit.
+"""
+from __future__ import annotations
+
+import random
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+
+from tracing.grader import GradeTolerance, grade_stroke
+from tracing.strokes import StrokeData, gradable_chars
+
+from .formats import ExamFormat, TYPES
+from .questions import ExamUnavailable, Hanja, Question, generate_questions
+
+KST = timezone(timedelta(hours=9))
+
+
+class ExamError(Exception):
+    pass
+
+
+class ExamClosed(ExamError):
+    """Exam already submitted or timed out."""
+
+
+class ActiveExamError(ExamError):
+    """Profile already has an unfinished exam of a different body/grade."""
+
+
+def cumulative_pool(body: str, grade: str, grades_order: Sequence[str],
+                    assignments: Mapping[Tuple[str, str], set], hanja: Mapping[str, Hanja]) -> List[Hanja]:
+    """Chars assigned to `grade` and every lower grade of the *same* body (no cross-body mapping)."""
+    idx = list(grades_order).index(grade)
+    chars = set()
+    for g in list(grades_order)[: idx + 1]:
+        chars |= set(assignments.get((body, g), ()))
+    return [hanja[c] for c in sorted(chars) if c in hanja]
+
+
+@dataclass
+class Exam:
+    exam_id: str
+    profile_id: str
+    fmt: ExamFormat
+    questions: List[Question]
+    started_at: datetime
+    deadline: datetime
+    answers: Dict[str, object] = field(default_factory=dict)
+    submitted_at: Optional[datetime] = None
+    auto_submitted: bool = False
+    result: Optional[dict] = None
+
+    @property
+    def submitted(self) -> bool:
+        return self.submitted_at is not None
+
+
+class MockExamService:
+    def __init__(
+        self,
+        formats: Mapping[Tuple[str, str], ExamFormat],
+        pool_for: Callable[[str, str], List[Hanja]],
+        stroke_db: Mapping[str, StrokeData],
+        stroke_ref: Mapping[str, StrokeData],
+        clock: Callable[[], datetime] = lambda: datetime.now(KST),
+        charge: Optional[Callable[[str], None]] = None,
+        on_wrong_char: Optional[Callable[[str, str], None]] = None,  # (profile_id, char) -> review list
+        tol: GradeTolerance = GradeTolerance(),
+        allow_substitute_writing: bool = False,
+    ) -> None:
+        self.formats, self.pool_for, self.clock = formats, pool_for, clock
+        self.stroke_db, self.stroke_ref = dict(stroke_db), dict(stroke_ref)
+        self.charge, self.on_wrong_char, self.tol = charge, on_wrong_char, tol
+        self.allow_substitute_writing = allow_substitute_writing
+        self.exams: Dict[str, Exam] = {}
+
+    # ---- lifecycle -------------------------------------------------------
+    def _active(self, profile_id: str) -> Optional[Exam]:
+        for e in self.exams.values():
+            if e.profile_id == profile_id and not e.submitted:
+                self._expire(e)
+                if not e.submitted:
+                    return e
+        return None
+
+    def start(self, profile_id: str, body: str, grade: str, seed: Optional[int] = None) -> Exam:
+        fmt = self.formats.get((body, grade))
+        if fmt is None:
+            raise ExamError(f"unsupported exam {body}/{grade}")
+        active = self._active(profile_id)
+        if active is not None:  # resume: no new questions, no deduction
+            if (active.fmt.body, active.fmt.grade) != (body, grade):
+                raise ActiveExamError("finish the exam in progress first")
+            return active
+        pool = self.pool_for(body, grade)
+        wchars = gradable_chars(self.stroke_db, self.stroke_ref) if fmt.has_writing else []
+        qs = generate_questions(fmt, pool, wchars, random.Random(seed), allow_substitute_writing=self.allow_substitute_writing)
+        if self.charge:
+            self.charge(profile_id)  # may raise (limit reached) -> nothing created
+        now = self.clock()
+        exam = Exam(uuid.uuid4().hex, profile_id, fmt, qs, now, now + timedelta(minutes=fmt.minutes))
+        self.exams[exam.exam_id] = exam
+        return exam
+
+    def _get(self, exam_id: str) -> Exam:
+        e = self.exams.get(exam_id)
+        if e is None:
+            raise ExamError("unknown exam")
+        self._expire(e)
+        return e
+
+    def _expire(self, e: Exam) -> None:
+        if not e.submitted and self.clock() >= e.deadline:
+            self._finish(e, e.deadline, auto=True)
+
+    def remaining_seconds(self, exam_id: str) -> int:
+        e = self._get(exam_id)
+        return 0 if e.submitted else max(0, int((e.deadline - self.clock()).total_seconds()))
+
+    def answer(self, exam_id: str, qid: str, value: object) -> None:
+        e = self._get(exam_id)
+        if e.submitted:
+            raise ExamClosed("exam is closed")
+        if qid not in {q.id for q in e.questions}:
+            raise ExamError("unknown question")
+        e.answers[qid] = value
+
+    def submit(self, exam_id: str) -> dict:
+        e = self._get(exam_id)
+        if not e.submitted:
+            self._finish(e, self.clock(), auto=False)
+        return e.result  # type: ignore[return-value]
+
+    def result(self, exam_id: str) -> dict:
+        e = self._get(exam_id)
+        if not e.submitted:
+            raise ExamError("exam not submitted yet")
+        return e.result  # type: ignore[return-value]
+
+    @staticmethod
+    def public_view(e: Exam) -> dict:
+        """What the client may see while the exam is open (no answers/explanations)."""
+        return {"exam_id": e.exam_id, "deadline": e.deadline.isoformat(), "questions": [
+            {"id": q.id, "type": q.type, "points": q.points, "prompt": q.prompt, "options": list(q.options)}
+            for q in e.questions]}
+
+    # ---- grading ---------------------------------------------------------
+    def _is_correct(self, q: Question, given: object) -> bool:
+        if given is None:
+            return False
+        if q.type != "writing":
+            return given == q.answer
+        data = self.stroke_db.get(q.char)
+        if data is None or not isinstance(given, (list, tuple)) or len(given) != data.stroke_count:
+            return False
+        return all(grade_stroke(s, data, i, self.tol) is None for i, s in enumerate(given))
+
+    def _finish(self, e: Exam, at: datetime, auto: bool) -> None:
+        e.submitted_at, e.auto_submitted = at, auto
+        by_type = {t: {"correct": 0, "total": 0, "rate": 0.0} for t in TYPES if any(q.type == t for q in e.questions)}
+        score, wrong = 0, []
+        for q in e.questions:
+            given = e.answers.get(q.id)
+            ok = self._is_correct(q, given)
+            by_type[q.type]["total"] += 1
+            if ok:
+                score += q.points
+                by_type[q.type]["correct"] += 1
+            else:
+                wrong.append({"id": q.id, "type": q.type, "prompt": q.prompt, "char": q.char,
+                              "your_answer": given if q.type != "writing" else ("(작성함)" if given else None),
+                              "answer": q.answer, "explanation": q.explanation})
+        for v in by_type.values():
+            v["rate"] = v["correct"] / v["total"]
+        e.result = {
+            "exam_id": e.exam_id, "body": e.fmt.body, "grade": e.fmt.grade,
+            "score": score, "total": e.fmt.total_score, "pass_score": e.fmt.pass_score,
+            "passed": score >= e.fmt.pass_score, "auto_submitted": auto,
+            "by_type": by_type, "wrong": wrong,
+        }
+        if self.on_wrong_char:
+            for c in dict.fromkeys(w["char"] for w in wrong):
+                self.on_wrong_char(e.profile_id, c)

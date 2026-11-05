@@ -1,0 +1,20 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, "Noto Sans KR", sans-serif; background: #f6faf7; color: #1d2b22; }
+main { max-width: 720px; margin: 0 auto; padding: 16px; }
+h1, h2 { margin: 8px 0; }
+button { font: inherit; padding: 10px 16px; border-radius: 10px; border: 1px solid #2f6f4f; background: #2f6f4f; color: #fff; cursor: pointer; margin: 4px 4px 4px 0; }
+button.secondary { background: #fff; color: #2f6f4f; }
+button:disabled { opacity: .5; cursor: default; }
+input, select { font: inherit; padding: 10px; border-radius: 8px; border: 1px solid #9bb; margin: 4px 0; width: 100%; }
+label { display: block; margin: 8px 0; }
+label.check { display: flex; gap: 8px; align-items: center; }
+label.check input { width: auto; }
+.card { background: #fff; border: 1px solid #d5e5da; border-radius: 14px; padding: 12px; margin: 10px 0; }
+.big { font-size: 64px; text-align: center; }
+.pad { touch-action: none; background: #fff; border: 2px solid #2f6f4f; border-radius: 12px; width: 100%; max-width: 320px; aspect-ratio: 1; display: block; }
+.msg { padding: 8px 12px; border-radius: 12px; margin: 6px 0; max-width: 90%; }
+.msg.user { background: #dff0e5; margin-left: auto; }
+.msg.bot { background: #fff; border: 1px solid #d5e5da; }
+.err { color: #b00020; }
+nav button { margin-right: 4px; }
+@media (max-width: 480px) { main { padding: 10px; } }

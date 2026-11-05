@@ -1,0 +1,349 @@
+{
+ "_comment": "Per body/grade exam format; independent config, grades are NOT mapped across bodies. verified=false until an operator confirms each grade against the body's published 출제기준. pass_score is in points (1 point per question).",
+ "bodies": {
+  "korea_eomunhoe": {
+   "8": {
+    "minutes": 50,
+    "pass_score": 35,
+    "types": [
+     {
+      "type": "eum",
+      "count": 25,
+      "points": 1
+     },
+     {
+      "type": "hun_eum",
+      "count": 25,
+      "points": 1
+     }
+    ],
+    "verified": false
+   },
+   "7II": {
+    "minutes": 50,
+    "pass_score": 42,
+    "types": [
+     {
+      "type": "eum",
+      "count": 30,
+      "points": 1
+     },
+     {
+      "type": "hun_eum",
+      "count": 30,
+      "points": 1
+     }
+    ],
+    "verified": false
+   },
+   "7": {
+    "minutes": 50,
+    "pass_score": 49,
+    "types": [
+     {
+      "type": "eum",
+      "count": 35,
+      "points": 1
+     },
+     {
+      "type": "hun_eum",
+      "count": 35,
+      "points": 1
+     }
+    ],
+    "verified": false
+   },
+   "6II": {
+    "minutes": 50,
+    "pass_score": 56,
+    "types": [
+     {
+      "type": "eum",
+      "count": 30,
+      "points": 1
+     },
+     {
+      "type": "hun_eum",
+      "count": 30,
+      "points": 1
+     },
+     {
+      "type": "hun_to_hanja",
+      "count": 20,
+      "points": 1
+     }
+    ],
+    "verified": false
+   },
+   "6": {
+    "minutes": 50,
+    "pass_score": 63,
+    "types": [
+     {
+      "type": "eum",
+      "count": 33,
+      "points": 1
+     },
+     {
+      "type": "hun_eum",
+      "count": 33,
+      "points": 1
+     },
+     {
+      "type": "hun_to_hanja",
+      "count": 24,
+      "points": 1
+     }
+    ],
+    "verified": false
+   },
+   "5II": {
+    "minutes": 50,
+    "pass_score": 70,
+    "types": [
+     {
+      "type": "eum",
+      "count": 35,
+      "points": 1
+     },
+     {
+      "type": "hun_eum",
+      "count": 35,
+      "points": 1
+     },
+     {
+      "type": "hun_to_hanja",
+      "count": 20,
+      "points": 1
+     },
+     {
+      "type": "writing",
+      "count": 10,
+      "points": 1
+     }
+    ],
+    "verified": false
+   },
+   "5": {
+    "minutes": 50,
+    "pass_score": 70,
+    "types": [
+     {
+      "type": "eum",
+      "count": 30,
+      "points": 1
+     },
+     {
+      "type": "hun_eum",
+      "count": 30,
+      "points": 1
+     },
+     {
+      "type": "hun_to_hanja",
+      "count": 20,
+      "points": 1
+     },
+     {
+      "type": "writing",
+      "count": 20,
+      "points": 1
+     }
+    ],
+    "verified": false
+   },
+   "4II": {
+    "minutes": 50,
+    "pass_score": 70,
+    "types": [
+     {
+      "type": "eum",
+      "count": 30,
+      "points": 1
+     },
+     {
+      "type": "hun_eum",
+      "count": 30,
+      "points": 1
+     },
+     {
+      "type": "hun_to_hanja",
+      "count": 10,
+      "points": 1
+     },
+     {
+      "type": "writing",
+      "count": 30,
+      "points": 1
+     }
+    ],
+    "verified": false
+   },
+   "4": {
+    "minutes": 50,
+    "pass_score": 70,
+    "types": [
+     {
+      "type": "eum",
+      "count": 25,
+      "points": 1
+     },
+     {
+      "type": "hun_eum",
+      "count": 25,
+      "points": 1
+     },
+     {
+      "type": "hun_to_hanja",
+      "count": 10,
+      "points": 1
+     },
+     {
+      "type": "writing",
+      "count": 40,
+      "points": 1
+     }
+    ],
+    "verified": false
+   }
+  },
+  "daegeom": {
+   "8": {
+    "minutes": 40,
+    "pass_score": 35,
+    "types": [
+     {
+      "type": "eum",
+      "count": 25,
+      "points": 1
+     },
+     {
+      "type": "hun_eum",
+      "count": 25,
+      "points": 1
+     }
+    ],
+    "verified": false
+   },
+   "7": {
+    "minutes": 40,
+    "pass_score": 42,
+    "types": [
+     {
+      "type": "eum",
+      "count": 30,
+      "points": 1
+     },
+     {
+      "type": "hun_eum",
+      "count": 30,
+      "points": 1
+     }
+    ],
+    "verified": false
+   },
+   "6": {
+    "minutes": 40,
+    "pass_score": 49,
+    "types": [
+     {
+      "type": "eum",
+      "count": 30,
+      "points": 1
+     },
+     {
+      "type": "hun_eum",
+      "count": 30,
+      "points": 1
+     },
+     {
+      "type": "hun_to_hanja",
+      "count": 10,
+      "points": 1
+     }
+    ],
+    "verified": false
+   },
+   "5": {
+    "minutes": 40,
+    "pass_score": 56,
+    "types": [
+     {
+      "type": "eum",
+      "count": 24,
+      "points": 1
+     },
+     {
+      "type": "hun_eum",
+      "count": 25,
+      "points": 1
+     },
+     {
+      "type": "hun_to_hanja",
+      "count": 16,
+      "points": 1
+     },
+     {
+      "type": "writing",
+      "count": 15,
+      "points": 1
+     }
+    ],
+    "verified": false
+   },
+   "4": {
+    "minutes": 40,
+    "pass_score": 63,
+    "types": [
+     {
+      "type": "eum",
+      "count": 27,
+      "points": 1
+     },
+     {
+      "type": "hun_eum",
+      "count": 28,
+      "points": 1
+     },
+     {
+      "type": "hun_to_hanja",
+      "count": 10,
+      "points": 1
+     },
+     {
+      "type": "writing",
+      "count": 25,
+      "points": 1
+     }
+    ],
+    "verified": false
+   },
+   "3": {
+    "minutes": 40,
+    "pass_score": 70,
+    "types": [
+     {
+      "type": "eum",
+      "count": 30,
+      "points": 1
+     },
+     {
+      "type": "hun_eum",
+      "count": 30,
+      "points": 1
+     },
+     {
+      "type": "hun_to_hanja",
+      "count": 10,
+      "points": 1
+     },
+     {
+      "type": "writing",
+      "count": 30,
+      "points": 1
+     }
+    ],
+    "verified": false
+   }
+  }
+ }
+}

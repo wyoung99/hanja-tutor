@@ -1,0 +1,56 @@
+"""Reviewed-DB view used by the chatbot (the only authority for 훈·음 and grade)."""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
+
+HANJA_CLASS = "㐀-䶿一-鿿豈-﫿"
+HANJA_RE = re.compile("[" + HANJA_CLASS + "]")
+
+
+@dataclass
+class HanjaKnowledge:
+    hanja: Dict[str, dict]                      # char -> {"hun","eum",...}
+    assignments: Dict[tuple, set]               # (body, grade) -> chars
+    grade_order: Dict[str, List[str]]           # body -> grades easiest..hardest
+    vocab: Dict[str, str] = field(default_factory=dict)  # 한자어 -> 뜻풀이
+
+    @classmethod
+    def from_files(cls) -> "HanjaKnowledge":
+        from hanja_db import verify as v
+
+        return cls(v.load_db_hanja(), v.load_db_assignments(), v.load_exam_bodies())
+
+    def entry(self, ch: str) -> Optional[dict]:
+        row = self.hanja.get(ch)
+        if row and (row.get("hun") or "").strip() and (row.get("eum") or "").strip():
+            return row
+        return None
+
+    def grade_of(self, body: str, ch: str) -> Optional[str]:
+        """Lowest (easiest) grade at which ch is assigned for body."""
+        for g in self.grade_order.get(body, []):
+            if ch in self.assignments.get((body, g), ()):
+                return g
+        return None
+
+    def within_target(self, body: str, grade: str, ch: str) -> bool:
+        order = self.grade_order.get(body, [])
+        g = self.grade_of(body, ch)
+        return g is not None and grade in order and order.index(g) <= order.index(grade)
+
+    def target_chars(self, body: str, grade: str) -> List[str]:
+        order = self.grade_order.get(body, [])
+        out: List[str] = []
+        if grade in order:
+            for g in order[: order.index(grade) + 1]:
+                out += sorted(self.assignments.get((body, g), ()))
+        return out
+
+    def suggest_words(self, body: str, grade: str, n: int = 1) -> List[str]:
+        """Hanja words made only of target-grade chars (for steering off-topic chats)."""
+        ok = [w for w in self.vocab if all(self.within_target(body, grade, c) for c in HANJA_RE.findall(w))]
+        if ok:
+            return sorted(ok)[:n]
+        return self.target_chars(body, grade)[:n]
