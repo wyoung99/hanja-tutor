@@ -113,10 +113,10 @@
 |---|---|
 | `assignments.csv` | body,grade,char. 어문회 1000행, 검정회 1000행(준5·준4·준3 380행 포함). |
 | `hanja.csv` | char,hun,eum,reviewed,char_nfc,hunum_source,hunum_raw. 1170자. 현재 앱 코드(verify.py 등) 호환용으로만 남긴다. 훈·음의 정답 원천은 `hanja_by_body.csv`이며, 앱이 기관별 조회로 바뀌면 이 파일의 훈·음 열은 쓰지 않는다. |
-| `hanja_by_body.csv` | body,grade,char,hun,eum,reviewed,char_nfc,source_raw. **기관별 훈·음의 정답 원천**(2000행 = 배정 (기관, 글자) 쌍과 1:1). reviewed는 전부 "0". |
+| `hanja_by_body.csv` | body,grade,char,hun,eum,reviewed,char_nfc,source_raw. **기관별 훈·음의 정답 원천**(2000행 = 배정 (기관, 글자) 쌍과 1:1). reviewed는 전부 "1"(자료 대조 검수, 아래 참조). |
 
 - **기관별 훈·음 분리 (결정 2026-11-05).** 두 기관 모두에 있는 830자 중 157자는 기관별 대표훈이 다르다(예: 兄 어문회 "형 형" / 검정회 "맏 형"). 대표음이 다른 글자도 3자다(易 역/이, 更 경/갱, 取 원문 누락). 결정에 따라 훈·음은 (기관, 글자) 단위 `hanja_by_body.csv`에 두고, 자녀가 선택한 기관의 값으로 제시·채점한다. 앱 코드 반영은 다음 실행에서 한다(Seed constraints 참조).
-- **사람 검수 필요.** 1129자(지원 급수 배정 글자)는 모두 `reviewed=0`이라 `verify.py`가 "not reviewed"로 보고한다. 검수자는 `hanja_by_body.csv`의 `source_raw`와 원문을 대조한 뒤 (기관, 글자) 행마다 `reviewed=1`로 바꾼다.
+- **훈·음 검수 완료 (2026-11-05, 자료 대조).** `backend/hanja_db/cross_verify.py --apply`로 2000행 모두 `reviewed=1`. 대한검정회 1000행은 사용자가 넣은 「신출한자 훈음표」 PDF 9개(`official_lists/daegeom/*급 신출한자 훈음표*.pdf`)의 표제훈음과 1000/1000 일치. 한국어문회 1000행은 사용자가 넣은 `official_lists/korea_eomunhoe/eomunhoe-hanja.csv`와 999/1000 일치, 占은 CSV 행이 깨져 있어('점령할점') 원문 판독으로 일치 확인. 빈칸이던 대한검정회 준3급 取는 PDF 값 '가질 취', 暴는 '사나울 포'(PDF: '사나울(폭)포', 폭은 이음)로 채웠다. 행별 결과는 `hanja_db/review_report.csv`. 참고: 검정회 PDF는 앞서 쓴 HWP 훈음표와 같은 문서의 다른 형식이라 추출 오류를 잡는 대조이고, 어문회 CSV는 출처가 다른 별도 자료다.
 
 ---
 
