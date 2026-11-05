@@ -40,6 +40,7 @@ constraints:
   - "모델은 작업별 등급으로 고른다. 기본은 Haiku 4.5(fast)이고 사고가 필요한 작업만 Sonnet 4.6(reasoning)을 쓴다. 챗봇 답변·안전 분류는 fast, 모의고사 AI 문항 생성(보기·해설 JSON)은 reasoning. 기본 리전은 ap-northeast-2(global.* 프로필만 제공), us-east-1·us-west-2는 us.* 프로필을 쓴다. 모델 ID: haiku = {us|global}.anthropic.claude-haiku-4-5-20251001-v1:0, sonnet = {us|global}.anthropic.claude-sonnet-4-6."
   - "프론트엔드는 Next.js 반응형 PWA(설치 가능)이며, 주 저장소는 PostgreSQL, 결제는 토스페이먼츠 정기결제(빌링)이다."
   - "테스트: 백엔드 pytest, 프론트엔드 Vitest, 전체 흐름은 Playwright E2E. 시간 의존 로직은 주입 가능한 시계(fake clock)로 KST 경계를 테스트한다."
+  - "시험 환경은 로컬이다(사용자 결정 2026-11-05: 스테이징 배포 없음). 성능·E2E·PWA 측정은 로컬 uvicorn + next start에서 하고 결과를 파일로 남긴다."
   - "날짜 경계는 모두 KST 기준이다: 일 단위는 자정, 주 단위는 월요일 00:00."
   # --- 콘텐츠·데이터 ---
   - "모든 한자 정보(배정 한자·훈·음·빈도)는 기관 공개 배정한자 목록과 공개 사전 데이터로 구축한 검수된 DB가 유일한 정답 근거이며, 저작권 있는 기출문제 원문은 쓰지 않는다."
@@ -143,10 +144,10 @@ acceptance_criteria:
   - id: AC9
     title: "챗봇 응답 속도·오류 처리가 기준을 지킨다"
     criterion: >
-      스트리밍 첫 토큰이 질문 후 3초 안에 도착한다(p95, 스테이징). 15초 초과 또는 오류 시 안내 문구와 다시 시도 버튼이 보이고,
+      스트리밍 첫 토큰이 질문 후 3초 안에 도착한다(p95, 로컬 환경: uvicorn + next start, 실제 Bedrock). 15초 초과 또는 오류 시 안내 문구와 다시 시도 버튼이 보이고,
       실패한 질문은 사용량에 포함되지 않는다.
       [구현 순서] 선행: 문해력 챗봇, 무료 플랜 사용량 한도.
-    verify: "Playwright + 스테이징 부하 측정(p95)"
+    verify: "Playwright + 로컬 부하 측정(p95, 실제 Bedrock 호출, 측정 결과 파일로 기록)"
   - id: AC10
     title: "대화 이력을 저장하고 이어가며 보관 규칙을 지킨다"
     criterion: >
@@ -205,12 +206,12 @@ acceptance_criteria:
     criterion: "기본 Bedrock과 대체 제공자 1개(또는 fake 모델) 설정 모두에서 코드 수정 없이 챗봇·문제 생성 테스트가 통과한다. [구현 순서] 선행: 문해력 챗봇, 실전형 모의고사(문제 생성)."
     verify: "pytest 매트릭스(LLM_PROVIDER 설정별)"
   - id: AC17
-    title: "가입부터 리포트까지 전체 흐름이 배포 환경에서 통과하고 PWA로 설치된다"
+    title: "가입부터 리포트까지 전체 흐름이 로컬 환경에서 통과하고 PWA로 설치된다"
     criterion: >
-      스테이징에서 Playwright E2E(가입·동의 → 자녀 프로필 → 오늘의 한자 → 따라쓰기 → 모의고사 → 챗봇 → 리포트)가 통과하고,
+      로컬 환경(uvicorn + next start)에서 Playwright E2E(가입·동의 → 자녀 프로필 → 오늘의 한자 → 따라쓰기 → 모의고사 → 챗봇 → 리포트)가 통과하고,
       manifest·service worker 검사를 통과해 설치 가능하다. 구독 결제·환불 단계는 검증 제외 대상이라 이 E2E에 포함하지 않는다.
       [구현 순서] 선행: 나머지 모든 기준(가장 마지막에 구현).
-    verify: "Playwright E2E(스테이징) + Lighthouse PWA 검사"
+    verify: "Playwright E2E(로컬) + Lighthouse PWA 검사(로컬, 결과 파일로 기록)"
 
 assumptions:
   - "목표 기관·급수와 시험일은 부모가 학습계획에서 입력한다. 시험일 미입력 시 해당 급수 전체를 90일에 균등 분배한다."
