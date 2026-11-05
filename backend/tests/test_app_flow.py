@@ -40,7 +40,7 @@ def test_full_journey_signup_to_report():
     for card in today["new"]:  # real per-body readings from hanja_by_body.csv, never synthetic
         r = STORE.reading("korea_eomunhoe", card["char"])
         assert r is not None and (card["hun"], card["eum"]) == (r.hun, r.eum)
-        assert not FAKE_READING.match(card["hun"] or "") and card["reviewed"] is False
+        assert not FAKE_READING.match(card["hun"] or "") and card["reviewed"] is r.reviewed  # API mirrors the DB flag
     card = next(x for x in today["new"] if x["tracing"] == "graded")
     ch = card["char"]
 

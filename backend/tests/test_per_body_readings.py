@@ -77,11 +77,25 @@ def test_db_crosscheck_rejects_other_bodys_reading():
     assert h.hun_eum == "맏 형"
 
 
+def test_real_db_has_no_incomplete_readings_after_review():
+    # 2026-11-05 cross-check filled the last empty fields (대한검정회 준3 取 가질 취, 暴 사나울 포)
+    assert all(r.complete and r.reviewed for r in STORE.readings.values())
+    assert STORE.reading(DAEGEOM, "取").hun_eum == "가질 취"
+    assert STORE.reading(DAEGEOM, "暴").hun_eum == "사나울 포"
+
+
 def test_incomplete_reading_is_never_asked():
-    # 대한검정회 준3 取 has empty 훈·음 in the source (pending human review): kept out of exam pools
-    assert STORE.reading(DAEGEOM, "取") is not None and not STORE.reading(DAEGEOM, "取").complete
-    assert "取" not in HANJA[DAEGEOM]
-    assert "取" not in {h.char for h in cumulative_pool(DAEGEOM, "3", STORE.bodies[DAEGEOM], ASSIGN, HANJA[DAEGEOM])}
+    # An empty 훈 or 음 (e.g. a source gap awaiting review) must keep the char out of the exam pool.
+    bodies = {DAEGEOM: ["8"]}
+    assign = [{"body": DAEGEOM, "grade": "8", "char": c} for c in ("一", "二", "三")]
+    rows = [{"body": DAEGEOM, "grade": "8", "char": "一", "hun": "한", "eum": "일", "reviewed": "1"},
+            {"body": DAEGEOM, "grade": "8", "char": "二", "hun": "두", "eum": "", "reviewed": "0"},
+            {"body": DAEGEOM, "grade": "8", "char": "三", "hun": "", "eum": "", "reviewed": "0"}]
+    store = HanjaStore.from_rows(bodies, assign, rows)
+    hanja = hanja_by_body(store)
+    assert set(hanja[DAEGEOM]) == {"一"}
+    pool = cumulative_pool(DAEGEOM, "8", store.bodies[DAEGEOM], store.assignment_sets(), hanja[DAEGEOM])
+    assert {h.char for h in pool} == {"一"}
 
 
 # ---- chatbot -------------------------------------------------------------------------------
