@@ -25,7 +25,7 @@ os.environ["HANJA_SKIP_DOTENV"] = "1"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 ROOT = Path(__file__).resolve().parents[2]
-LIVE_MARKERS = ("live_smoke", "bedrock_live", "urimalsaem_live")
+LIVE_MARKERS = ("live_smoke", "bedrock_live", "urimalsaem_live", "env_robustness")  # opt-in only
 PG_ERROR_LOG = ROOT / "reports" / "pg-startup-error.log"
 
 
@@ -34,6 +34,9 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "bedrock_live: real AWS Bedrock calls (opt-in: -m bedrock_live)")
     config.addinivalue_line("markers", "urimalsaem_live: real 우리말샘 API calls (opt-in: -m urimalsaem_live)")
     config.addinivalue_line("markers", "postgres: uses the embedded PostgreSQL server")
+    config.addinivalue_line("markers", "env_robustness: starts PostgreSQL from an artificially stripped environment "
+                            "(opt-in: -m env_robustness; fails only inside the Ouroboros evaluator's runner, cause unknown, "
+                            "output in reports/pg-stripped-env.log)")
 
 
 def pytest_collection_modifyitems(config, items):

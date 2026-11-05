@@ -14,7 +14,8 @@
     "e2e": "playwright test",
     "test:live": "cd .. && python -m pytest backend/tests/test_live.py -m \"bedrock_live or urimalsaem_live\" -p no:cacheprovider -rs",
     "measure:p95": "cd .. && python backend/scripts/measure_p95.py --n 20",
-    "lighthouse": "node scripts/lighthouse-pwa.mjs"
+    "lighthouse": "node scripts/lighthouse-pwa.mjs",
+    "test:env": "cd .. && python -m pytest backend/tests/test_pg_startup.py -m env_robustness -q -p no:cacheprovider -rfEs"
   },
   "dependencies": {
     "next": "^15.0.0",

@@ -35,6 +35,7 @@ def test_missing_systemroot_is_restored(monkeypatch):
     assert ensure_windows_env() == []
 
 
+@pytest.mark.env_robustness  # opt-in: npm --prefix frontend run test:env (see conftest.py)
 @pytest.mark.postgres
 @pytest.mark.skipif(sys.platform != "win32", reason="the failure mode is Windows-specific")
 def test_embedded_server_starts_from_a_stripped_environment(tmp_path):
@@ -42,4 +43,8 @@ def test_embedded_server_starts_from_a_stripped_environment(tmp_path):
     env = {"PATH": os.environ["PATH"]}  # no SystemRoot, TEMP, LOCALAPPDATA, ...: initdb + start must still work
     r = subprocess.run([sys.executable, "-c", child], env=env, capture_output=True, text=True, encoding="utf-8",
                        errors="replace", timeout=240, stdin=subprocess.DEVNULL)
+    log = BACKEND.parent / "reports" / "pg-stripped-env.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text("\n".join([f"returncode={r.returncode}", "--- stdout ---", r.stdout, "--- stderr ---", r.stderr, ""]),
+                   encoding="utf-8")
     assert r.returncode == 0 and r.stdout.strip().endswith("READY"), r.stdout[-1500:] + r.stderr[-1500:]
