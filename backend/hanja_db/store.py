@@ -121,3 +121,21 @@ class HanjaStore:
             out.setdefault(body, {})[c] = {"char": c, "hun": r.hun, "eum": r.eum,
                                           "reviewed": "1" if r.reviewed else "0"}
         return out
+
+
+EOMUNHOE_CSV = DATA / "official_lists" / "korea_eomunhoe" / "eomunhoe-hanja.csv"
+
+
+def load_eomunhoe_attributes(path: Path = EOMUNHOE_CSV) -> Dict[str, Tuple[str, int]]:
+    """NFC char -> (部首, total stroke count) from the 한국어문회 list (columns radical, total_strokes).
+
+    Used for 한국어문회 部首 / 筆順 questions only (never applied to another body's readings)."""
+    out: Dict[str, Tuple[str, int]] = {}
+    if not path.exists():
+        return out
+    with path.open(encoding="utf-8", newline="") as fh:
+        for r in csv.DictReader(fh):
+            rad, tot = (r.get("radical") or "").strip(), (r.get("total_strokes") or "").strip()
+            if rad and tot.isdigit():
+                out.setdefault(nfc(r["hanja"]), (nfc(rad), int(tot)))
+    return out

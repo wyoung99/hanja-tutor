@@ -18,10 +18,12 @@ from llm import FakeProvider  # noqa: E402
 from mockexam import formats as F  # noqa: E402
 from mockexam import questions as Q  # noqa: E402
 from mockexam.service import MockExamService, cumulative_pool  # noqa: E402
+from tracing.strokes import load_db as load_stroke_db  # noqa: E402
 
 KST = timezone(timedelta(hours=9))
 STORE = HanjaStore.load()
 HANJA = hanja_by_body(STORE)
+SDB = load_stroke_db()  # 한국어문회 筆順 questions need the stroke data
 ASSIGN = STORE.assignment_sets()
 EOMUN, DAEGEOM = "korea_eomunhoe", "daegeom"
 
@@ -41,7 +43,7 @@ def test_store_keeps_both_bodies_values_for_the_same_char():
 def _exam_with(body, grade, char, qtype):
     pool = lambda b, g: cumulative_pool(b, g, STORE.bodies[b], ASSIGN, HANJA[b])  # noqa: E731
     for seed in range(200):
-        svc = MockExamService(F.load_formats(), pool, {}, pending=F.load_pending())
+        svc = MockExamService(F.load_formats(), pool, SDB, pending=F.load_pending())
         ex = svc.start("p", body, grade, seed=seed)
         qs = [q for q in ex.questions if q.char == char and q.type == qtype]
         if qs:

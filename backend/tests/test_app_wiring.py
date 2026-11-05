@@ -193,7 +193,7 @@ def test_exam_resume_timer_and_auto_submit_at_deadline():
     v = c.get(f"/api/exams/{ex['exam_id']}").json()
     assert v["submitted"] and v["remaining_seconds"] == 0 and v["result"]["auto_submitted"] is True
     res = v["result"]
-    assert set(res["by_type"]) == {"eum", "hun_eum"}
+    assert list(res["by_type"]) == ["dokeum", "hunum", "pilsun"]  # 한국어문회 8급 official types
     assert all("explanation" in w and w["explanation"] for w in res["wrong"])
     assert c.get(f"/api/children/{cid}/exams/active").status_code == 404
     assert c.get(f"/api/children/{cid}/usage").json()["mockexam"]["used"] == 1
@@ -442,5 +442,6 @@ def test_every_available_format_generates_for_many_seeds():
     for (body, grade), fmt in exam.formats.items():
         pool = exam.pool_for(body, grade)
         for seed in range(15):
-            qs = generate_questions(fmt, pool, wchars if fmt.has_writing else [], random.Random(seed))
+            qs = generate_questions(fmt, pool, wchars if fmt.has_writing else [], random.Random(seed),
+                                    strokes=exam.stroke_db)
             assert len(qs) == fmt.question_count

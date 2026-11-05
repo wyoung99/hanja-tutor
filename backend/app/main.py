@@ -5,8 +5,9 @@ tracing, study plan, screen time, reports, billing, refunds) behind one HTTP API
 
 Hanja data is always the real DB: per-body 훈·음 from ``data/hanja_db/hanja_by_body.csv`` and assignments
 from ``assignments.csv`` (NFC lookups), stroke medians from ``data/stroke_data/strokes.json`` (hanzi-writer).
-Every 훈·음 shown, asked or graded is the value of the child's selected exam body. Grades without a known
-official exam format (대한검정회 준5·준4·준3) get learning features only; mock-exam start is blocked.
+Every 훈·음 shown, asked or graded is the value of the child's selected exam body. Mock-exam formats come
+from ``data/exam_formats.json`` (generated from the official format files of both bodies); a grade without a
+known official format would get learning features only (mock-exam start blocked, "형식 준비 중").
 
 Configuration (``backend/.env`` + process env, see ``app/settings.py`` and ``.env.example``):
 * ``LLM_CONFIG`` JSON -> ``llm.build_llm_router`` (Bedrock Haiku/Sonnet by tier); empty -> fake LLM.
@@ -56,7 +57,7 @@ from db.pg import database_url  # noqa: E402
 from db.state import PostgresStateBackend, StateSync  # noqa: E402
 from app.persistence import PlanState, apply_plan_state, rebuild_indexes, register_all  # noqa: E402
 from notifications import InvalidSubscription, NotificationCenter, VapidConfig, WebPushSender  # noqa: E402
-from hanja_db.store import HanjaStore, nfc  # noqa: E402
+from hanja_db.store import HanjaStore, load_eomunhoe_attributes, nfc  # noqa: E402
 from lifecycle import LifecycleService, PaymentRecord, PaymentStore  # noqa: E402
 from llm import FakeProvider, LLMRouter, build_llm_router  # noqa: E402
 from mockexam import formats as F  # noqa: E402
@@ -78,12 +79,16 @@ BODY_NAMES = {"korea_eomunhoe": "한국어문회", "daegeom": "대한검정회"}
 SCHEDULER_INTERVAL_SECONDS = 3600
 
 
-def hanja_by_body(store: HanjaStore) -> Dict[str, Dict[str, Q.Hanja]]:
-    """body -> char -> Hanja(char, hun, eum) with that body's own reading (incomplete rows left out)."""
+def hanja_by_body(store: HanjaStore, attrs: Optional[Dict[str, tuple]] = None) -> Dict[str, Dict[str, Q.Hanja]]:
+    """body -> char -> Hanja(char, hun, eum) with that body's own reading (incomplete rows left out).
+
+    한국어문회 chars also get 部首 / total strokes from the 한국어문회 list (部首·筆順 questions)."""
+    attrs = load_eomunhoe_attributes() if attrs is None else attrs
     out: Dict[str, Dict[str, Q.Hanja]] = {b: {} for b in store.bodies}
     for (body, c), r in store.readings.items():
         if r.complete:
-            out.setdefault(body, {})[c] = Q.Hanja(c, r.hun, r.eum)
+            rad, tot = attrs.get(c, ("", 0)) if body == "korea_eomunhoe" else ("", 0)
+            out.setdefault(body, {})[c] = Q.Hanja(c, r.hun, r.eum, rad, tot)
     return out
 
 
@@ -477,7 +482,14 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
 
     def exam_info(b: str, g: str) -> dict:
         status = F.exam_status(formats, pending, b, g)
-        return {"status": status, "message": F.FORMAT_PENDING_MESSAGE if status == "format_pending" else None}
+        out = {"status": status, "message": F.FORMAT_PENDING_MESSAGE if status == "format_pending" else None}
+        f = formats.get((b, g))
+        if f is not None:  # official format summary for the parent's grade picker
+            out.update(questions=f.question_count, minutes=f.minutes, total_score=f.total_score,
+                       pass_score=f.pass_score, pass_questions=f.pass_questions,
+                       points_per_question=f.points_per_question, type_mix=f.type_mix, notice=f.notice,
+                       all_multiple_choice=f.all_choice)
+        return out
 
     def exam_view(e) -> dict:
         v = exam.public_view(e)

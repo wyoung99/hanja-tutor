@@ -17,8 +17,12 @@ from tracing.strokes import StrokeData  # noqa: E402
 
 KST = timezone(timedelta(hours=9))
 T0 = datetime(2026, 3, 2, 10, 0, tzinfo=KST)
-TOP = ((200, 300), (500, 300), (800, 300))
-BOT = ((100, 700), (500, 700), (900, 700))
+TOP = ((200, 200), (500, 200), (800, 200))
+MID = ((200, 450), (500, 450), (800, 450))
+LOW = ((150, 650), (500, 650), (850, 650))
+BOT = ((100, 850), (500, 850), (900, 850))
+STROKES = (TOP, MID, LOW, BOT)  # 4 strokes: enough for 筆順 (4 ordinal options)
+RIGHT = [list(x) for x in STROKES]
 
 FORMATS = F.load_formats()
 PENDING = F.load_pending()
@@ -34,7 +38,8 @@ def synthetic_world():
             chars = set()
             for _ in range(PER_GRADE):
                 c = chr(0x4E00 + n)
-                hanja[c] = Q.Hanja(c, f"훈{n}", f"음{n % 57}")
+                # synthetic 部首 (20 distinct) and official total strokes matching the stroke data
+                hanja[c] = Q.Hanja(c, f"훈{n}", f"음{n % 57}", chr(0x9F00 + n % 20), len(STROKES))
                 chars.add(c)
                 n += 1
             assign[(body, g)] = chars
@@ -42,7 +47,7 @@ def synthetic_world():
 
 
 HANJA, ASSIGN = synthetic_world()
-SDB = {c: StrokeData(c, (TOP, BOT)) for c in HANJA}
+SDB = {c: StrokeData(c, STROKES) for c in HANJA}
 
 
 class Clock:
@@ -61,7 +66,7 @@ def make(clock=None, sdb=SDB, **kw):
 
 
 def correct_answers(exam):
-    return {q.id: (q.answer if q.type != "writing" else [list(TOP), list(BOT)]) for q in exam.questions}
+    return {q.id: (q.answer if q.type != "writing" else RIGHT) for q in exam.questions}
 
 
 def test_formats_cover_every_supported_grade_independently():
@@ -71,29 +76,34 @@ def test_formats_cover_every_supported_grade_independently():
     assert set(FORMATS) & set(PENDING) == set()
     for key in FORMATS:
         f = FORMATS[key]
-        assert f.question_count == f.total_score and f.minutes > 0 and 0 < f.pass_score <= f.total_score
+        assert f.question_count * f.points_per_question == f.total_score
+        assert f.minutes > 0 and 0 < f.pass_score <= f.total_score
     for key, reason in PENDING.items():
         assert reason.strip() and F.exam_status(FORMATS, PENDING, *key) == "format_pending"
     assert not FORMATS[("korea_eomunhoe", "8")].has_writing
 
 
-def test_jun_grades_have_no_invented_format():
-    # decision 2026-11-05: no official format known for 대한검정회 준5·준4·준3
+def test_jun_grades_now_have_the_official_format():
+    # 2026-11-05: 대한검정회 준5·준4·준3 formats are official (50 객관식, 35 문항 = 70점, 40분)
+    assert PENDING == {}
     for g in ("준5", "준4", "준3"):
-        assert ("daegeom", g) not in FORMATS and ("daegeom", g) in PENDING
-    assert F.exam_status(FORMATS, PENDING, "daegeom", "5") == "available"
+        f = FORMATS[("daegeom", g)]
+        assert (f.question_count, f.pass_questions, f.pass_score, f.total_score, f.minutes) == (50, 35, 70, 100, 40)
+        assert F.exam_status(FORMATS, PENDING, "daegeom", g) == "available"
     assert F.exam_status(FORMATS, PENDING, "daegeom", "2") == "unsupported"
 
 
-@pytest.mark.parametrize("grade", ["준5", "준4", "준3"])
-def test_mock_exam_start_blocked_for_format_pending_grade(grade):
+def test_format_pending_mechanism_still_blocks_unknown_formats():
+    """Kept for future grades without a published format: start is blocked, nothing created or deducted."""
     charged = []
-    svc, _ = make(charge=charged.append)
+    pending = {("daegeom", "준5"): "공식 형식 미확보"}
+    fmts = {k: v for k, v in FORMATS.items() if k != ("daegeom", "준5")}
+    pool = lambda b, g: cumulative_pool(b, g, BODIES[b], ASSIGN, HANJA)  # noqa: E731
+    svc = MockExamService(fmts, pool, SDB, clock=Clock(), charge=charged.append, pending=pending)
     with pytest.raises(FormatPending, match="형식 준비 중"):
-        svc.start("p1", "daegeom", grade, seed=1)
-    assert svc.exams == {} and charged == []  # nothing created, nothing deducted
-    # learning pool for the grade still exists (cumulative, same body only)
-    assert len(cumulative_pool("daegeom", grade, BODIES["daegeom"], ASSIGN, HANJA)) > 0
+        svc.start("p1", "daegeom", "준5", seed=1)
+    assert svc.exams == {} and charged == []
+    assert F.exam_status(fmts, pending, "daegeom", "준5") == "format_pending"
 
 
 @pytest.mark.parametrize("body,grade", sorted(FORMATS))
@@ -103,10 +113,12 @@ def test_exam_matches_selected_format(body, grade):
     f = FORMATS[(body, grade)]
     assert len(ex.questions) == f.question_count
     for spec in f.types:
-        got = [q for q in ex.questions if q.type == spec.type]
-        assert len(got) == spec.count and all(q.points == spec.points for q in got)
+        got = [q for q in ex.questions if q.slot == spec.key]
+        assert len(got) == spec.count and all(q.points == spec.points and q.type == spec.type for q in got)
     assert ex.deadline - ex.started_at == timedelta(minutes=f.minutes)
-    assert Q.filter_questions(ex.questions, HANJA)[1] == []
+    assert Q.filter_questions(ex.questions, HANJA, SDB)[1] == []
+    if body == "daegeom":
+        assert all(q.options for q in ex.questions)  # all multiple choice
     # questions only use chars of this body, up to this grade
     pool = {h.char for h in cumulative_pool(body, grade, BODIES[body], ASSIGN, HANJA)}
     assert {q.char for q in ex.questions} <= pool
@@ -135,6 +147,20 @@ def test_pass_fail_uses_real_cutoff():
     assert r2["score"] == f.pass_score - 1 and r2["passed"] is False
 
 
+@pytest.mark.parametrize("grade,n,ppq,pass_q", [("8", 25, 4, 18), ("7", 25, 4, 18), ("6", 50, 2, 35), ("준3", 50, 2, 35)])
+def test_daegeom_scores_in_points_with_the_official_question_pass_line(grade, n, ppq, pass_q):
+    for right, passed in ((pass_q, True), (pass_q - 1, False)):
+        svc, _ = make()
+        ex = svc.start("p1", "daegeom", grade, seed=8)
+        assert len(ex.questions) == n and {q.points for q in ex.questions} == {ppq}
+        for i, q in enumerate(ex.questions):
+            svc.answer(ex.exam_id, q.id, q.answer if i < right else "틀림")
+        r = svc.submit(ex.exam_id)
+        assert r["score"] == right * ppq and r["total"] == 100 and r["pass_score"] == 70
+        assert r["correct_count"] == right and r["pass_questions"] == pass_q and r["points_per_question"] == ppq
+        assert r["passed"] is passed and r["type_mix"] == "app_defined" and r["notice"] is None
+
+
 def test_result_has_score_type_rates_wrong_explanations_and_feeds_review():
     body, grade = "korea_eomunhoe", "5II"
     planner_chars = [PlanHanja(h.char, i) for i, h in enumerate(cumulative_pool(body, grade, BODIES[body], ASSIGN, HANJA))]
@@ -142,16 +168,23 @@ def test_result_has_score_type_rates_wrong_explanations_and_feeds_review():
     svc, _ = make(on_wrong_char=lambda pid, c: planner.add_review(c, REASON_MOCK_WRONG))
     ex = svc.start("p1", body, grade, seed=3)
     ans = correct_answers(ex)
-    missed = [q for q in ex.questions if q.type == "hun_eum"][:4]
+    missed = [q for q in ex.questions if q.slot == "hunum"][:4]
     for q in missed:
         ans[q.id] = "틀림"
     for k, v in ans.items():
         svc.answer(ex.exam_id, k, v)
     r = svc.submit(ex.exam_id)
-    assert r["score"] == r["total"] - 4 and set(r["by_type"]) == {"eum", "hun_eum", "hun_to_hanja", "writing"}
-    he = r["by_type"]["hun_eum"]
+    f = FORMATS[(body, grade)]
+    # per official type, in official order, with the official names
+    assert r["score"] == r["total"] - 4 and list(r["by_type"]) == [t.key for t in f.types]
+    assert r["by_type"]["hunum"]["label"] == "訓音" and r["by_type"]["pilsun"]["label"] == "筆順"
+    assert r["by_type"]["hanja_sseugi"]["type"] == "writing" and not r["by_type"]["hanja_sseugi"]["substituted"]
+    assert r["by_type"]["dokeum"]["substituted"] and r["by_type"]["dokeum"]["type"] == "eum"
+    he = r["by_type"]["hunum"]
     assert he["correct"] == he["total"] - 4 and abs(he["rate"] - he["correct"] / he["total"]) < 1e-9
-    assert r["by_type"]["eum"]["rate"] == 1.0
+    assert r["by_type"]["dokeum"]["rate"] == 1.0
+    assert r["type_mix"] == "partial_substitution" and r["notice"] == F.SUBSTITUTION_NOTICE
+    assert r["substitutions"]["dokeum"] == {"count": 35, "with": "eum"}
     assert {w["id"] for w in r["wrong"]} == {q.id for q in missed}
     assert all(w["explanation"] and w["answer"] for w in r["wrong"])
     assert {m.char for m in missed} <= set(planner.reviews)
@@ -210,30 +243,33 @@ def test_charge_failure_creates_no_exam():
 def test_writing_is_blank_cell_stroke_graded_and_only_for_gradable_chars():
     half = list(HANJA)[::2]
     # every other char lacks stroke data; one char with data is flagged exclude_from_grading
-    sdb = {c: StrokeData(c, (TOP, BOT)) for c in half}
+    sdb = {c: StrokeData(c, STROKES) for c in half}
     flagged = half[0]
-    sdb[flagged] = StrokeData(flagged, (TOP, BOT), exclude_from_grading=True)
+    sdb[flagged] = StrokeData(flagged, STROKES, exclude_from_grading=True)
     svc, _ = make(sdb=sdb)
     ex = svc.start("p1", "korea_eomunhoe", "4", seed=7)
     w = [q for q in ex.questions if q.type == "writing"]
-    assert len(w) == 40 and all(q.char in sdb and not sdb[q.char].exclude_from_grading for q in w)
+    assert len(w) == 20 and all(q.slot == "hanja_sseugi" for q in w)  # 漢字 쓰기 20 (official 4급)
+    assert all(q.char in sdb and not sdb[q.char].exclude_from_grading for q in w)
     assert all(q.options == () and "직접 쓰세요" in q.prompt for q in w)
     q0 = w[0]
-    svc.answer(ex.exam_id, q0.id, [list(TOP), list(BOT)])  # right
-    svc.answer(ex.exam_id, w[1].id, [list(BOT), list(TOP)])  # wrong order
-    svc.answer(ex.exam_id, w[2].id, [list(TOP)])  # incomplete
+    svc.answer(ex.exam_id, q0.id, RIGHT)  # right
+    svc.answer(ex.exam_id, w[1].id, RIGHT[::-1])  # wrong order
+    svc.answer(ex.exam_id, w[2].id, RIGHT[:1])  # incomplete
     r = svc.submit(ex.exam_id)
     wrong_ids = {x["id"] for x in r["wrong"]}
     assert q0.id not in wrong_ids and w[1].id in wrong_ids and w[2].id in wrong_ids
-    assert r["by_type"]["writing"]["correct"] == 1
+    assert r["by_type"]["hanja_sseugi"]["correct"] == 1
 
 
 def test_no_stroke_data_blocks_writing_exam_but_not_nonwriting():
     svc, _ = make(sdb={})
     with pytest.raises(Q.ExamUnavailable):
         svc.start("p1", "korea_eomunhoe", "4")
+    with pytest.raises(Q.ExamUnavailable):  # 8급 has 筆順, which needs stroke data
+        svc.start("p1", "korea_eomunhoe", "8")
     assert svc.exams == {}
-    assert len(svc.start("p1", "korea_eomunhoe", "8").questions) == 50  # 8급 has no writing
+    assert len(svc.start("p1", "daegeom", "8").questions) == 25  # all multiple choice, no stroke data needed
 
 
 def test_verify_rejects_db_mismatch_and_filter_discards():
@@ -258,9 +294,51 @@ def test_audit_sample_of_200_plus_has_error_rate_below_1_percent():
         sample += svc.start("audit", body, grade, seed=11).questions
         svc.exams.clear()
     assert len(sample) >= 200
-    checked, bad, rate = Q.audit_error_rate(sample, HANJA)
+    assert {q.type for q in sample} == set(F.TYPES)
+    checked, bad, rate = Q.audit_error_rate(sample, HANJA, SDB)
     assert checked >= 200 and rate < 0.01 and bad == 0
     # the audit really detects errors: corrupt 3 of 200 -> 1.5% flagged
     corrupt = [Q.Question(q.id, q.type, q.points, q.prompt, q.char, q.options, "음없음", q.explanation)
                if i < 3 and q.type == "eum" else q for i, q in enumerate(sample)]
-    assert Q.audit_error_rate(corrupt, HANJA)[1] >= 1
+    assert Q.audit_error_rate(corrupt, HANJA, SDB)[1] >= 1
+
+
+def test_pilsun_question_is_stroke_data_grounded_with_figure_and_caveat_metadata():
+    svc, _ = make()
+    ex = svc.start("p1", "korea_eomunhoe", "8", seed=12)
+    ps = [q for q in ex.questions if q.type == "pilsun"]
+    assert len(ps) == 2 and all(q.slot == "pilsun" for q in ps)
+    for q in ps:
+        assert q.answer == Q.ordinal(q.stroke_index) and q.answer in q.options and len(set(q.options)) == 4
+        assert "hanzi-writer" not in q.explanation  # the data caveat is metadata, not child-facing copy
+    view = svc.public_view(ex)
+    figs = [v for v in view["questions"] if v["type"] == "pilsun"]
+    assert all(v["figure"]["highlight"] == q.stroke_index and len(v["figure"]["strokes"]) == 4
+               for v, q in zip(figs, ps))
+    assert "answer" not in json.dumps(figs)
+    for q in ex.questions:
+        svc.answer(ex.exam_id, q.id, q.answer)
+    r = svc.submit(ex.exam_id)
+    assert "hanzi-writer" in r["data_caveats"]["pilsun"] and r["by_type"]["pilsun"]["rate"] == 1.0
+    # verification: wrong ordinal, stroke-count mismatch with the official total, excluded char
+    q = ps[0]
+    bad = Q.Question(q.id, q.type, q.points, q.prompt, q.char, q.options,
+                     Q.ordinal((q.stroke_index + 1) % 4), q.explanation, slot=q.slot, stroke_index=q.stroke_index)
+    assert Q.verify_question(bad, HANJA, SDB) and Q.verify_question(q, HANJA, None)
+    h = HANJA[q.char]
+    assert not Q.pilsun_ok(Q.Hanja(h.char, h.hun, h.eum, h.radical, 5), SDB)
+    assert not Q.pilsun_ok(h, {q.char: StrokeData(q.char, STROKES, exclude_from_grading=True)})
+
+
+def test_busu_question_uses_the_db_radical_and_radical_distractors():
+    svc, _ = make()
+    ex = svc.start("p1", "korea_eomunhoe", "4II", seed=13)
+    bs = [q for q in ex.questions if q.type == "busu"]
+    assert len(bs) == 3 and all(q.slot == "busu" for q in bs)
+    radicals = {h.radical for h in HANJA.values()}
+    for q in bs:
+        assert q.answer == HANJA[q.char].radical and set(q.options) <= radicals and len(set(q.options)) == 4
+    q = bs[0]
+    other = next(o for o in q.options if o != q.answer)
+    bad = Q.Question(q.id, q.type, q.points, q.prompt, q.char, q.options, other, q.explanation, slot=q.slot)
+    assert Q.verify_question(bad, HANJA) and not Q.verify_question(q, HANJA)

@@ -101,23 +101,50 @@ def test_hun_eum_shown_per_selected_body():
     assert c.get(f"/api/children/{b}/hanja/{only_eomunhoe}").status_code == 404
 
 
-def test_jun_grade_learning_works_but_mock_exam_is_blocked():
+def test_jun_grade_mock_exam_uses_the_official_daegeom_format():
+    """준5·준4·준3 now have the official format: 50 객관식, 2점씩, 35문항(70점) 합격, 40분."""
     c = TestClient(create_app())
     H = login(c)
     cat = {x["body"]: x for x in c.get("/api/catalog").json()}
     assert cat["daegeom"]["grades"] == ["8", "7", "6", "준5", "5", "준4", "4", "준3", "3"]
-    assert cat["daegeom"]["exam"]["준5"] == {"status": "format_pending", "message": "형식 준비 중"}
-    assert cat["daegeom"]["exam"]["5"]["status"] == "available"
+    assert all(v["status"] == "available" and v["message"] is None for v in cat["daegeom"]["exam"].values())
+    assert all(v["status"] == "available" for v in cat["korea_eomunhoe"]["exam"].values())
+    j5 = cat["daegeom"]["exam"]["준5"]
+    assert (j5["questions"], j5["pass_questions"], j5["pass_score"], j5["total_score"], j5["minutes"]) == (50, 35, 70, 100, 40)
+    assert j5["all_multiple_choice"] and j5["type_mix"] == "app_defined" and j5["notice"] is None
+    e8 = cat["daegeom"]["exam"]["8"]
+    assert (e8["questions"], e8["points_per_question"], e8["pass_questions"], e8["pass_score"]) == (25, 4, 18, 70)
+    k8 = cat["korea_eomunhoe"]["exam"]["8"]
+    assert k8["type_mix"] == "partial_substitution" and "대체" in k8["notice"]
     kid = child(c, H, "준이", "daegeom", "준5")
     today = c.get(f"/api/children/{kid}/today").json()
-    assert today["exam"]["status"] == "format_pending" and 3 <= len(today["new"]) <= 15
+    assert today["exam"]["status"] == "available" and 3 <= len(today["new"]) <= 15
     assert all(STORE.reading("daegeom", x["char"]).grade == "준5" for x in today["new"])
-    before = c.get(f"/api/children/{kid}/usage").json()["mockexam"]
-    r = c.post(f"/api/children/{kid}/exams", json={"seed": 1})
-    assert r.status_code == 409
-    assert r.json()["detail"] == {"code": "exam_format_pending", "message": "형식 준비 중"}
-    assert c.get(f"/api/children/{kid}/usage").json()["mockexam"] == before  # nothing deducted
+    ex = c.post(f"/api/children/{kid}/exams", json={"seed": 1}).json()
+    assert len(ex["questions"]) == 50 and ex["total_score"] == 100 and ex["pass_score"] == 70
+    assert ex["minutes"] == 40 and ex["pass_questions"] == 35 and ex["points_per_question"] == 2
+    assert all(q["options"] and q["type"] != "writing" and q["points"] == 2 for q in ex["questions"])
+    res = c.post(f"/api/exams/{ex['exam_id']}/submit").json()
+    assert res["score"] == 0 and res["passed"] is False and res["question_count"] == 50
     assert c.put(f"/api/children/{kid}/target", headers=H, json={"body": "daegeom", "grade": "2"}).status_code == 422
+
+
+def test_eomunhoe_exam_has_official_type_slots_with_pilsun_figure():
+    c = TestClient(create_app())
+    H = login(c)
+    kid = child(c, H, "필순이", "korea_eomunhoe", "8")
+    ex = c.post(f"/api/children/{kid}/exams", json={"seed": 3}).json()
+    slots = [q["slot"] for q in ex["questions"]]
+    assert (slots.count("dokeum"), slots.count("hunum"), slots.count("pilsun")) == (24, 24, 2)
+    for q in ex["questions"]:
+        if q["slot"] == "pilsun":
+            fig = q["figure"]
+            assert 0 <= fig["highlight"] < len(fig["strokes"]) and len(q["options"]) == 4
+    assert ex["notice"] and ex["type_mix"] == "partial_substitution"
+    res = c.post(f"/api/exams/{ex['exam_id']}/submit").json()
+    assert [k for k in res["by_type"]] == ["dokeum", "hunum", "pilsun"]
+    assert [v["label"] for v in res["by_type"].values()] == ["讀音", "訓音", "筆順"]
+    assert res["data_caveats"]["pilsun"] and res["substitutions"] == {"dokeum": {"count": 24, "with": "eum"}}
 
 
 def test_billing_routes_are_wired():

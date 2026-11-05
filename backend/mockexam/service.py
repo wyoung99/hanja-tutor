@@ -16,8 +16,8 @@ from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 from tracing.grader import GradeTolerance, grade_stroke
 from tracing.strokes import StrokeData, gradable_chars
 
-from .formats import FORMAT_PENDING_MESSAGE, ExamFormat, TYPES
-from .questions import ExamUnavailable, Hanja, Question, generate_questions
+from .formats import FORMAT_PENDING_MESSAGE, ExamFormat
+from .questions import PILSUN_DATA_CAVEAT, ExamUnavailable, Hanja, Question, generate_questions
 
 KST = timezone(timedelta(hours=9))
 
@@ -66,6 +66,13 @@ class Exam:
         return self.submitted_at is not None
 
 
+def format_view(f: ExamFormat) -> dict:
+    """Scoring/format facts the client shows (points, official pass line in questions, substitution notice)."""
+    return {"minutes": f.minutes, "points_per_question": f.points_per_question, "pass_questions": f.pass_questions,
+            "type_mix": f.type_mix, "notice": f.notice,
+            "substitutions": {k: {"count": v["count"], "with": v["with"]} for k, v in f.substitutions.items()}}
+
+
 class MockExamService:
     def __init__(
         self,
@@ -108,7 +115,8 @@ class MockExamService:
             return active
         pool = self.pool_for(body, grade)
         wchars = gradable_chars(self.stroke_db) if fmt.has_writing else []
-        qs = generate_questions(fmt, pool, wchars, random.Random(seed), allow_substitute_writing=self.allow_substitute_writing)
+        qs = generate_questions(fmt, pool, wchars, random.Random(seed),
+                                allow_substitute_writing=self.allow_substitute_writing, strokes=self.stroke_db)
         if self.charge:
             self.charge(profile_id)  # may raise (limit reached) -> nothing created
         now = self.clock()
@@ -151,12 +159,19 @@ class MockExamService:
             raise ExamError("exam not submitted yet")
         return e.result  # type: ignore[return-value]
 
-    @staticmethod
-    def public_view(e: Exam) -> dict:
-        """What the client may see while the exam is open (no answers/explanations)."""
-        return {"exam_id": e.exam_id, "deadline": e.deadline.isoformat(), "questions": [
-            {"id": q.id, "type": q.type, "points": q.points, "prompt": q.prompt, "options": list(q.options)}
-            for q in e.questions]}
+    def public_view(self, e: Exam) -> dict:
+        """What the client may see while the exam is open (no answers/explanations).
+
+        筆順 questions carry the char's stroke medians with the highlighted stroke index (the figure)."""
+        qs = []
+        for q in e.questions:
+            v = {"id": q.id, "type": q.type, "slot": q.slot or q.type, "points": q.points, "prompt": q.prompt,
+                 "options": list(q.options)}
+            if q.type == "pilsun" and q.char in self.stroke_db:
+                v["figure"] = {"strokes": [[list(p) for p in s] for s in self.stroke_db[q.char].strokes],
+                               "highlight": q.stroke_index}
+            qs.append(v)
+        return {"exam_id": e.exam_id, "deadline": e.deadline.isoformat(), **format_view(e.fmt), "questions": qs}
 
     # ---- grading ---------------------------------------------------------
     def _is_correct(self, q: Question, given: object) -> bool:
@@ -171,27 +186,40 @@ class MockExamService:
 
     def _finish(self, e: Exam, at: datetime, auto: bool) -> None:
         e.submitted_at, e.auto_submitted = at, auto
-        by_type = {t: {"correct": 0, "total": 0, "rate": 0.0} for t in TYPES if any(q.type == t for q in e.questions)}
-        score, wrong = 0, []
+        # per type slot, in format order: official type names (한국어문회) or app-defined labels (대한검정회)
+        by_type: Dict[str, dict] = {}
+        for t in e.fmt.types:
+            by_type[t.key] = {"label": t.label, "type": t.type, "substituted": t.substituted,
+                              "correct": 0, "total": 0, "rate": 0.0}
+        score, correct_n, wrong = 0, 0, []
         for q in e.questions:
             given = e.answers.get(q.id)
             ok = self._is_correct(q, given)
-            by_type[q.type]["total"] += 1
+            slot = by_type.setdefault(q.slot or q.type, {"label": q.slot or q.type, "type": q.type,
+                                                         "substituted": False, "correct": 0, "total": 0,
+                                                         "rate": 0.0})
+            slot["total"] += 1
             if ok:
                 score += q.points
-                by_type[q.type]["correct"] += 1
+                correct_n += 1
+                slot["correct"] += 1
             else:
                 wrong.append({"id": q.id, "type": q.type, "prompt": q.prompt, "char": q.char,
                               "your_answer": given if q.type != "writing" else ("(작성함)" if given else None),
                               "answer": q.answer, "explanation": q.explanation})
+        by_type = {k: v for k, v in by_type.items() if v["total"]}
         for v in by_type.values():
             v["rate"] = v["correct"] / v["total"]
         e.result = {
             "exam_id": e.exam_id, "body": e.fmt.body, "grade": e.fmt.grade,
             "score": score, "total": e.fmt.total_score, "pass_score": e.fmt.pass_score,
+            "correct_count": correct_n, "question_count": len(e.questions),
             "passed": score >= e.fmt.pass_score, "auto_submitted": auto,
+            **format_view(e.fmt),
             "by_type": by_type, "wrong": wrong,
         }
+        if any(q.type == "pilsun" for q in e.questions):  # metadata for parents/operators, not shown to the child
+            e.result["data_caveats"] = {"pilsun": PILSUN_DATA_CAVEAT}
         if self.on_wrong_char:
             for c in dict.fromkeys(w["char"] for w in wrong):
                 self.on_wrong_char(e.profile_id, c)
