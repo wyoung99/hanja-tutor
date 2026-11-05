@@ -34,3 +34,7 @@ playwright-report/
 
 # Embedded PostgreSQL data (dev)
 backend/.pgdata/
+
+# embedded Postgres test data (fallback dir)
+.pgtest/
+reports/pg-startup-error.log

@@ -45,8 +45,22 @@ def pg_uri():
         return
     from db.pg import EmbeddedPostgresUnavailable, start_embedded_postgres
 
-    try:
-        uri = start_embedded_postgres(Path(tempfile.mkdtemp(prefix="hanja-pg-")) / "data", cleanup="delete")
-    except EmbeddedPostgresUnavailable as e:
-        pytest.skip(f"embedded PostgreSQL could not start: {e}")
+    # First try a temp dir; if that fails (seen once only inside the Ouroboros evaluator, cause unknown),
+    # retry in a short repo-local dir and record every error so the next run shows the real reason.
+    errors = []
+    candidates = [Path(tempfile.mkdtemp(prefix="hanja-pg-")) / "data",
+                  Path(__file__).resolve().parents[2] / ".pgtest" / f"run-{os.getpid()}" / "data"]
+    for data_dir in candidates:
+        try:
+            uri = start_embedded_postgres(data_dir, cleanup="delete")
+            break
+        except EmbeddedPostgresUnavailable as e:
+            errors.append(f"{data_dir}: {e}")
+    else:
+        log = Path(__file__).resolve().parents[2] / "reports" / "pg-startup-error.log"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text("
+".join(errors) + "
+", encoding="utf-8")
+        pytest.skip("embedded PostgreSQL could not start: " + " | ".join(errors))
     yield uri
