@@ -1,11 +1,15 @@
 "use client";
 import { useEffect, useState } from "react";
-import { api, ApiError, session, won } from "../lib/api";
+import { api, ApiError, passLine, session, won } from "../lib/api";
 import { gradeLabel } from "../lib/strokes";
 import { Chat, Exam, reading, ScreenGuard, Tracing, type Card, type Child } from "../components/ChildPanels";
 import { Account, Alerts, ChildCard, Reports } from "../components/ParentPanels";
 
-type ExamInfo = { status: "available" | "format_pending" | "unsupported"; message: string | null };
+type ExamInfo = {
+  status: "available" | "format_pending" | "unsupported"; message: string | null;
+  questions?: number; minutes?: number; total_score?: number; pass_score?: number; pass_questions?: number | null;
+  points_per_question?: number | null; type_mix?: string; notice?: string | null; all_multiple_choice?: boolean;
+};
 type Catalog = { body: string; name: string; grades: string[]; exam: Record<string, ExamInfo> }[];
 type View = "auth" | "parent" | "child";
 
@@ -111,7 +115,8 @@ function Parent({ onEnter, onLoggedOut }: { onEnter: (c: Child) => void; onLogge
   }
   const entry = catalog.find((c) => c.body === body);
   const grades = entry?.grades ?? [];
-  const pendingNote = entry?.exam[grade]?.status === "format_pending";
+  const info = entry?.exam[grade];
+  const pendingNote = info?.status === "format_pending";
   return (
     <>
       <nav>
@@ -139,6 +144,13 @@ function Parent({ onEnter, onLoggedOut }: { onEnter: (c: Child) => void; onLogge
                 ))}
               </select>
             </label>
+            {info?.status === "available" && (
+              <p data-testid="grade-format">
+                모의고사: {info.questions}문항 · {info.minutes}분 · 합격 {passLine({ ...info, pass_score: info.pass_score ?? 0 })}
+                {info.all_multiple_choice ? " · 모두 객관식" : ""}
+                {info.notice && <><br /><small data-testid="grade-notice">{info.notice}</small></>}
+              </p>
+            )}
             {pendingNote && <p data-testid="grade-note">이 급수는 공식 모의고사 형식을 확인하는 중이라 모의고사는 아직 볼 수 없어요. 오늘의 한자·복습·따라쓰기는 모두 할 수 있어요.</p>}
             <label className="check"><input type="checkbox" data-testid="ai-consent" checked={ai} onChange={(e) => setAi(e.target.checked)} />대화·학습 기록의 AI 처리에 동의합니다 (미동의 시 챗봇만 꺼져요)</label>
             <button data-testid="add-child" onClick={addChild}>프로필 만들기</button>

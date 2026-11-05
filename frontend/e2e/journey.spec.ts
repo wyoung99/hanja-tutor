@@ -129,13 +129,17 @@ test("full journey: signup → child → today → tracing → mock exam → cha
   await expect(page.getByTestId("detail-msg")).toContainText("구독 전용");
 });
 
-test("준급: learning works, mock exam start is blocked as 형식 준비 중", async ({ page }) => {
+test("준급: learning works and the mock exam uses the official 대한검정회 format", async ({ page }) => {
   await signup(page, "jun@example.com");
   await page.getByTestId("nick").fill("준이");
   await page.getByTestId("pin").fill("1234");
   await page.getByTestId("body").selectOption("daegeom");
   await page.getByTestId("grade").selectOption("준5");
-  await expect(page.getByTestId("grade-note")).toBeVisible();
+  await expect(page.getByTestId("grade-note")).toHaveCount(0);
+  await expect(page.getByTestId("grade")).not.toContainText("형식 준비 중");
+  await expect(page.getByTestId("grade-format")).toContainText("50문항 · 40분");
+  await expect(page.getByTestId("grade-format")).toContainText("문항 기준 35/50문항");
+  await expect(page.getByTestId("grade-format")).toContainText("모두 객관식");
   await page.getByTestId("add-child").click();
   await page.getByTestId("enter-준이").click();
   await page.getByTestId("child-pin").fill("1234");
@@ -143,5 +147,12 @@ test("준급: learning works, mock exam start is blocked as 형식 준비 중", 
   await expect(page.getByTestId("today-card").first()).toBeVisible();
   await page.getByTestId("tab-exam").click();
   await page.getByTestId("exam-start").click();
-  await expect(page.getByTestId("exam-msg")).toContainText("형식 준비 중");
+  await expect(page.getByTestId("exam-question")).toHaveCount(50);
+  await expect(page.getByTestId("exam-format")).toContainText("40분");
+  await expect(page.getByTestId("exam-format")).toContainText("70/100점 (문항 기준 35/50문항, 1문항 2점)");
+  await expect(page.locator('[data-testid="exam-question"][data-type="writing"]')).toHaveCount(0);
+  await page.getByTestId("exam-submit").click();
+  await expect(page.getByTestId("exam-score")).toContainText("0 / 100점 · 0/50문항 맞힘");
+  await expect(page.getByTestId("exam-by-type")).toContainText("훈음 고르기");
+  await expect(page.getByTestId("exam-notice")).toHaveCount(0);
 });

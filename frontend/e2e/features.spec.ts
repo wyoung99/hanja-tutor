@@ -115,6 +115,7 @@ test("AC6: leaving resumes the exam with the timer running; time-out auto-submit
   await page.getByTestId("tab-exam").click();
   await page.getByTestId("exam-start").click();
   await expect(page.getByTestId("exam-question")).toHaveCount(50);
+  await expect(page.getByTestId("stroke-figure")).toHaveCount(2); // 한국어문회 8급 筆順 2문항
   const examId = await page.getByTestId("exam-running").getAttribute("data-exam-id");
   await expect(page.getByTestId("exam-timer")).toContainText(/남은 시간 (50:00|49:5\d)/);
   await page.locator('[data-testid="exam-question"]').first().locator('input[type="radio"]').first().check();
@@ -140,8 +141,10 @@ test("AC6: leaving resumes the exam with the timer running; time-out auto-submit
     await resetClock(page);
   }
   await expect(page.getByTestId("exam-auto")).toBeVisible();
-  await expect(page.getByTestId("exam-by-type")).toContainText("음 쓰기");
-  await expect(page.getByTestId("exam-by-type")).toContainText("훈음 쓰기");
+  await expect(page.getByTestId("exam-by-type")).toContainText("讀音");
+  await expect(page.getByTestId("exam-by-type")).toContainText("訓音");
+  await expect(page.getByTestId("exam-by-type")).toContainText("筆順");
+  await expect(page.getByTestId("exam-notice")).toContainText("비슷한 유형으로 대체");
   await expect(page.getByTestId("exam-wrong").locator("li").first()).toContainText("훈음은");
   // no second deduction: the weekly start is used up, resume/auto-submit did not charge again
   await page.getByRole("button", { name: "닫기" }).click();

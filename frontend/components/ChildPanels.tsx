@@ -1,6 +1,6 @@
 "use client";
 import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiError, childLockMessage, mmss, pct, streamChat, TYPE_LABEL } from "../lib/api";
+import { api, ApiError, childLockMessage, mmss, passLine, pct, scoreLine, streamChat, TYPE_LABEL } from "../lib/api";
 import type { Pt } from "../lib/strokes";
 import StrokePad from "./StrokePad";
 
@@ -192,10 +192,11 @@ export function Exam({ child }: { child: Child }) {
   return (
     <section className="card" aria-label="모의고사" data-testid="exam-running" data-exam-id={exam.exam_id}>
       <p className="timer" data-testid="exam-timer" aria-live="polite">남은 시간 {mmss(left)}</p>
-      <p>제한 시간 {exam.minutes}분 · 합격 {exam.pass_score}/{exam.total_score}점 · 문항 {exam.questions.length}개</p>
+      <p data-testid="exam-format">제한 시간 {exam.minutes}분 · 합격 {passLine({ ...exam, question_count: exam.questions.length })} · 문항 {exam.questions.length}개</p>
       {exam.questions.map((q: any, i: number) => (
-        <div key={q.id} className="card" data-testid="exam-question">
+        <div key={q.id} className="card" data-testid="exam-question" data-type={q.type}>
           <p>{i + 1}. {q.prompt}</p>
+          {q.figure && <StrokeFigure strokes={q.figure.strokes} highlight={q.figure.highlight} />}
           {q.type === "writing" ? (
             <>
               <StrokePad onStroke={(s) => {
@@ -218,17 +219,35 @@ export function Exam({ child }: { child: Child }) {
   );
 }
 
+/** 筆順 figure: the char's stroke medians (hanzi-writer data) with the asked stroke in red. */
+export function StrokeFigure({ strokes, highlight }: { strokes: [number, number][][]; highlight: number }) {
+  const path = (s: [number, number][]) => s.map(([x, y], i) => `${i ? "L" : "M"}${x} ${y}`).join(" ");
+  return (
+    <svg viewBox="0 0 1000 1000" width={160} height={160} role="img" aria-label="빨간색 획을 보세요" data-testid="stroke-figure"
+      style={{ background: "#fff", border: "1px solid #dfe5e1", borderRadius: 8 }}>
+      {strokes.map((s, i) => (
+        <path key={i} d={path(s)} fill="none" strokeLinecap="round" strokeLinejoin="round"
+          stroke={i === highlight ? "#e0533d" : "#9aa59f"} strokeWidth={i === highlight ? 70 : 50} />
+      ))}
+    </svg>
+  );
+}
+
 function ExamResult({ result, onClose }: { result: any; onClose: () => void }) {
   return (
     <section className="card" data-testid="exam-result">
       <h2>결과</h2>
       {result.auto_submitted && <p data-testid="exam-auto">시간이 끝나서 자동으로 제출했어요.</p>}
-      <p data-testid="exam-score">{result.score} / {result.total}점 (합격선 {result.pass_score}점)</p>
+      <p data-testid="exam-score">{scoreLine(result)} (합격선 {passLine(result)})</p>
       <p data-testid="exam-pass">{result.passed ? "합격 🎉" : "불합격 — 다시 도전해요"}</p>
+      {result.notice && <p className="explain" data-testid="exam-notice">{result.notice}</p>}
       <h3>유형별 정답률</h3>
       <table data-testid="exam-by-type"><tbody>
         {Object.entries(result.by_type ?? {}).map(([t, v]: [string, any]) => (
-          <tr key={t}><td>{TYPE_LABEL[t] ?? t}</td><td>{v.correct}/{v.total}</td><td>{pct(v.rate)}</td></tr>
+          <tr key={t} data-substituted={v.substituted ? "1" : "0"}>
+            <td>{v.label ?? TYPE_LABEL[t] ?? t}{v.substituted && <small> (대체: {TYPE_LABEL[v.type] ?? v.type})</small>}</td>
+            <td>{v.correct}/{v.total}</td><td>{pct(v.rate)}</td>
+          </tr>
         ))}
       </tbody></table>
       <h3>틀린 문항 해설 ({result.wrong.length})</h3>

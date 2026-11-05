@@ -99,8 +99,29 @@ export function mmss(seconds: number): string {
   return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 }
 
-/** Accuracy per question type for the exam result screen. */
-export const TYPE_LABEL: Record<string, string> = { eum: "음 쓰기", hun_eum: "훈음 쓰기", hun_to_hanja: "한자 고르기", writing: "한자 쓰기" };
+/** Fallback labels per app question type (results carry the official type name in by_type[k].label). */
+export const TYPE_LABEL: Record<string, string> = {
+  eum: "음(소리) 고르기", hun_eum: "훈음 고르기", hun_to_hanja: "한자 고르기", writing: "한자 쓰기", busu: "부수", pilsun: "필순",
+};
+
+export type ExamScoring = { score?: number; total?: number; total_score?: number; pass_score: number; points_per_question?: number | null;
+  pass_questions?: number | null; correct_count?: number; question_count?: number; questions?: number };
+
+/** Pass line: points, plus the official question count when a question is worth more than 1 point. */
+export function passLine(f: ExamScoring): string {
+  const total = f.total ?? f.total_score;
+  const n = f.question_count ?? f.questions;
+  const pts = `${f.pass_score}/${total}점`;
+  return f.points_per_question && f.points_per_question > 1 && f.pass_questions
+    ? `${pts} (문항 기준 ${f.pass_questions}/${n}문항, 1문항 ${f.points_per_question}점)`
+    : pts;
+}
+
+/** Result score line: "72 / 100점 · 18/25문항 맞힘" (points-based bodies) or "40 / 50점". */
+export function scoreLine(r: ExamScoring): string {
+  const base = `${r.score} / ${r.total}점`;
+  return r.points_per_question && r.points_per_question > 1 ? `${base} · ${r.correct_count}/${r.question_count}문항 맞힘` : base;
+}
 
 export function pct(x: number | null | undefined): string {
   return x == null ? "-" : `${Math.round(x * 100)}%`;

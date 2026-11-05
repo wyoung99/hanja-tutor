@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { childLockMessage, won } from "./api";
+import { childLockMessage, passLine, scoreLine, TYPE_LABEL, won } from "./api";
 import { manifestProblems } from "./pwa";
 import { gradeLabel, normalize, simplify, toCanvas } from "./strokes";
 import { readFileSync } from "node:fs";
@@ -29,6 +29,24 @@ describe("strokes", () => {
 describe("pwa manifest", () => {
   it("is installable", () => expect(manifestProblems(manifest as any)).toEqual([]));
   it("flags missing icons", () => expect(manifestProblems({ name: "x", start_url: "/", display: "standalone", icons: [] })).toEqual(["icon192", "icon512"]));
+});
+
+describe("exam scoring copy", () => {
+  it("대한검정회: points with the official question pass line", () => {
+    expect(passLine({ pass_score: 70, total: 100, points_per_question: 4, pass_questions: 18, question_count: 25 }))
+      .toBe("70/100점 (문항 기준 18/25문항, 1문항 4점)");
+    expect(passLine({ pass_score: 70, total_score: 100, points_per_question: 2, pass_questions: 35, questions: 50 }))
+      .toBe("70/100점 (문항 기준 35/50문항, 1문항 2점)");
+    expect(scoreLine({ score: 72, total: 100, pass_score: 70, points_per_question: 4, correct_count: 18, question_count: 25 }))
+      .toBe("72 / 100점 · 18/25문항 맞힘");
+  });
+  it("한국어문회: 1 point per question, no duplicate question line", () => {
+    expect(passLine({ pass_score: 35, total: 50, points_per_question: 1, pass_questions: 35, question_count: 50 })).toBe("35/50점");
+    expect(scoreLine({ score: 40, total: 50, pass_score: 35, points_per_question: 1, correct_count: 40, question_count: 50 })).toBe("40 / 50점");
+  });
+  it("labels every app question type", () => {
+    for (const t of ["eum", "hun_eum", "hun_to_hanja", "writing", "busu", "pilsun"]) expect(TYPE_LABEL[t]).toBeTruthy();
+  });
 });
 
 describe("child copy", () => {
