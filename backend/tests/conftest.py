@@ -1,7 +1,7 @@
 """Shared pytest setup.
 
 * Unit tests never read backend/.env (hermetic: no real Bedrock / 우리말샘 calls, no costs).
-* Live tests are opt-in: ``bedrock_live`` / ``urimalsaem_live`` run only when selected with
+* Live tests are opt-in (deselected otherwise): ``bedrock_live`` / ``urimalsaem_live`` run only when selected with
   ``-m bedrock_live`` / ``-m urimalsaem_live`` (npm --prefix frontend run test:live) and then skip with
   "AWS credentials not configured" (or "OPENDICT_API_KEY not configured") when keys are missing.
 * ``pg_uri`` fixture: a project-local embedded PostgreSQL (pixeltable-pgserver, no system install).
@@ -26,11 +26,15 @@ def pytest_configure(config):
 
 
 def pytest_collection_modifyitems(config, items):
+    """Live tests are deselected (not run, not counted as skips) unless their marker is selected."""
     expr = config.getoption("markexpr") or ""
+    keep, drop = [], []
     for item in items:
-        for m in LIVE_MARKERS:
-            if m in item.keywords and m not in expr:
-                item.add_marker(pytest.mark.skip(reason=f"opt-in live test: run with -m {m}"))
+        live = [m for m in LIVE_MARKERS if m in item.keywords]
+        (drop if live and not any(m in expr for m in live) else keep).append(item)
+    if drop:
+        config.hook.pytest_deselected(items=drop)
+        items[:] = keep
 
 
 @pytest.fixture(scope="session")
