@@ -2,9 +2,20 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import re
+
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+
+_PHONE_FRAGMENTS = ("010-1234-5678", "01012345678", "1234-5678", "12345678", "010-1234")
+
+
+def contains_phone_fragment(text: str) -> bool:
+    """True if any piece of the test phone number 010-1234-5678 appears (memory addresses ignored)."""
+    text = re.sub(r"0x[0-9a-fA-F]+", "", text)
+    return any(f in text for f in _PHONE_FRAGMENTS)
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from accounts.service import AccountService, ChatbotDisabled, FakeIdentityVerifier, Forbidden  # noqa: E402
@@ -70,7 +81,10 @@ def test_harmful_and_pii_never_stored_and_parent_sees_and_is_notified():
     svc, acc, p, child, notifier, _ = setup()
     msg = "내 전화번호는 010-1234-5678이야"
     svc.ask(child.id, "t1", msg)
-    assert "010" not in repr(svc.events) and "010" not in repr(notifier.sent) and "010" not in repr(vars(svc))
+    # Look for the phone number itself, not a bare "010": repr() embeds memory addresses (0x...010...)
+    # and timestamps that can contain "010" by chance, which made this assertion flaky.
+    for blob in (repr(svc.events), repr(notifier.sent), repr(vars(svc))):
+        assert not contains_phone_fragment(blob)
     view = svc.parent_safety_view(p.id, child.id)
     assert len(view) == 1 and view[0].category == "pii" and view[0].parent_notified
     assert notifier.sent[0][0] == p.id and notifier.sent[0][1] == "safety_event"

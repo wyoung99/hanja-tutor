@@ -268,7 +268,7 @@ def test_parent_sees_safety_events_without_raw_text():
     c.post(f"/api/children/{cid}/chat", json={"message": "내 전화번호는 010-1234-5678이야"})
     ev = c.get(f"/api/children/{cid}/safety-events", headers=H).json()
     assert len(ev) == 1 and ev[0]["category"] and ev[0]["parent_notified"] is True
-    assert "010" not in str(ev)
+    assert not any(f in str(ev) for f in ("010-1234-5678", "01012345678", "1234-5678", "010-1234"))
     notes = c.get("/api/parents/me/notifications", headers=H).json()
     assert any(n["kind"] == "safety_event" for n in notes)
     assert c.get(f"/api/children/{cid}/safety-events").status_code == 401

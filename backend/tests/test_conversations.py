@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from accounts.service import ChatbotDisabled, Forbidden, NotFound  # noqa: E402
 from chatbot.service import ChatbotService  # noqa: E402
 from conversations import ConversationService, InMemoryCheckpointer  # noqa: E402
-from test_chatbot import setup  # noqa: E402
+from test_chatbot import contains_phone_fragment, setup  # noqa: E402
 
 KST = timezone(timedelta(hours=9))
 
@@ -43,7 +43,7 @@ def test_blocked_input_not_persisted():
     tid, r = conv.send(child.id, "내 전화번호는 010-1234-5678이야")
     assert r.status == "blocked"
     assert conv.get_messages(child.id, tid) == []
-    assert "010" not in repr(cp._data) and "010" not in repr(conv.meta.rows)
+    assert not contains_phone_fragment(repr(cp._data)) and not contains_phone_fragment(repr(conv.meta.rows))
 
 
 def test_cap_100_evicts_oldest_including_checkpoint():
