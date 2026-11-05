@@ -202,6 +202,7 @@ test("AC9/AC10/AC12: streamed answers, retry after error and 15s timeout, resume
   await page.unroute("**/chat/stream");
   await page.getByTestId("chat-retry").click();
   await expect(page.getByTestId("chat-failed")).toHaveCount(0);
+  await expect(page.getByTestId("msg-bot").nth(2)).toContainText("學"); // the retried answer arrived (not just started)
   const used = (await (await page.request.get(`/api/children/${cid}/usage`)).json()).chatbot.used;
   expect(used).toBe(3); // only the 3 answered questions count
   await page.getByTestId("chat-input").fill("씨발");
