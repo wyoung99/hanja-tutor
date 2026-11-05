@@ -106,8 +106,28 @@ def stop_embedded_postgres(data_dir: Path) -> bool:
     return True
 
 
-if __name__ == "__main__":  # python -m db.pg stop <dir>
+def reset_embedded_postgres(data_dir: Path) -> None:
+    """Stop a server left on data_dir and delete the directory (fresh database for a local E2E run)."""
+    import shutil
+
+    data_dir = Path(data_dir).resolve()
+    try:
+        stop_embedded_postgres(data_dir)
+    except Exception:  # noqa: BLE001 - stale pid file
+        pass
+    for proc in postgres_processes(data_dir):
+        try:
+            proc.kill()
+        except Exception:  # noqa: BLE001
+            pass
+    shutil.rmtree(data_dir, ignore_errors=True)
+
+
+if __name__ == "__main__":  # python -m db.pg stop|reset <dir>
     import sys
 
     if len(sys.argv) == 3 and sys.argv[1] == "stop":
         print("stopped" if stop_embedded_postgres(Path(sys.argv[2])) else "not running")
+    elif len(sys.argv) == 3 and sys.argv[1] == "reset":
+        reset_embedded_postgres(Path(sys.argv[2]))
+        print("reset")

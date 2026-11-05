@@ -300,3 +300,31 @@ test("AC3: deleting a child profile and the account removes them", async ({ page
   await page.getByTestId("login").click();
   await expect(page.locator("p.err")).toContainText("login_failed");
 });
+
+test("AC8/AC11/AC12/AC13: parent turns on Web Push (VAPID key from the API) and gets a test alert", async ({ page, context }) => {
+  const email = uniq("push");
+  await context.grantPermissions(["notifications"], { origin: "http://127.0.0.1:3100" });
+  await signup(page, email);
+  await page.getByTestId("tab-alerts").click();
+  const state = page.getByTestId("push-state");
+  await expect(state).not.toHaveAttribute("data-state", "loading");
+  // server has VAPID keys and the browser is not subscribed yet ("denied": headless shells refuse notifications)
+  await expect(state).toHaveAttribute("data-state", /^(off|denied)$/);
+  const cfg = await (await page.request.get("/api/push/config")).json();
+  expect(cfg.enabled).toBe(true);
+  expect(Buffer.from(cfg.public_key, "base64url").length).toBe(65);
+
+  // subscribe: Chromium either reaches its push service (subscription registered with the backend) or, without
+  // one (offline/headless builds), reports an error/denial -- all handled; the inbox/email fallback stays.
+  const registered = page.waitForResponse((r) => r.url().endsWith("/api/parents/me/push-subscriptions") && r.request().method() === "POST", { timeout: 20_000 }).catch(() => null);
+  await page.getByTestId("push-on").click();
+  await expect(state).toHaveAttribute("data-state", /^(on|error|denied)$/, { timeout: 20_000 });
+  const reached = (await state.getAttribute("data-state"))!;
+  test.info().annotations.push({ type: "browser-push-state", description: reached }); // recorded in e2e-results.json
+  if (reached === "on") expect((await registered)!.status()).toBe(201);
+
+  await page.getByTestId("push-test").click();
+  await expect(page.getByTestId("push-msg")).toContainText(/테스트 알림을 보냈어요|이메일로 보냈어요/);
+  await expect(page.getByTestId("note-push_test")).toBeVisible({ timeout: 10_000 });
+  expect(await (await page.request.get("/sw.js")).text()).toContain('addEventListener("push"');
+});

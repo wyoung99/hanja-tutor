@@ -78,7 +78,15 @@ function Parent({ onEnter, onLoggedOut }: { onEnter: (c: Child) => void; onLogge
   const [ai, setAi] = useState(false);
   const [body, setBody] = useState("");
   const [grade, setGrade] = useState("");
-  const [tab, setTab] = useState<"kids" | "report" | "alerts" | "billing" | "account">("kids");
+  // a tapped push notification opens /?alerts=1 (new window) or messages an open window (sw.js)
+  const [tab, setTab] = useState<"kids" | "report" | "alerts" | "billing" | "account">(
+    () => (typeof location !== "undefined" && new URLSearchParams(location.search).has("alerts") ? "alerts" : "kids"));
+  useEffect(() => {
+    const sw = typeof navigator !== "undefined" ? navigator.serviceWorker : undefined;
+    const onMsg = (e: MessageEvent) => { if (e.data?.type === "open-alerts") setTab("alerts"); };
+    sw?.addEventListener("message", onMsg);
+    return () => sw?.removeEventListener("message", onMsg);
+  }, []);
   const [err, setErr] = useState("");
   const reload = async () => setKids(await api("/children", { auth: true }));
   useEffect(() => {

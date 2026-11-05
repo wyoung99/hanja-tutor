@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, pct } from "../lib/api";
+import { disablePush, enablePush, pushState, PUSH_STATE_TEXT, type PushState } from "../lib/push";
 import { gradeLabel } from "../lib/strokes";
 import type { Child } from "./ChildPanels";
 
@@ -204,7 +205,39 @@ function SafetyEvents({ child }: { child: Child }) {
 const KIND: Record<string, string> = {
   safety_event: "유해·개인정보 입력이 차단됐어요", extension_request: "사용 시간 연장 요청", weekly_summary: "주간 학습 요약",
   usage_limit_reached: "무료 한도 도달", dormancy_notice: "휴면 전환 예정 안내", payment_failed: "결제 실패",
+  subscription_ended: "구독 종료", refund_decided: "환불 결과", push_test: "알림 테스트",
 };
+
+// ---------------------------------------------------------------- Web Push settings (AC8, AC11, AC12, AC13)
+export function PushSettings() {
+  const [state, setState] = useState<PushState | "loading">("loading");
+  const [msg, setMsg] = useState("");
+  useEffect(() => { pushState().then(setState).catch(() => setState("error")); }, []);
+  async function on() {
+    setMsg("");
+    try { setState(await enablePush()); } catch (e) { setState("error"); setMsg(e instanceof Error ? e.message : "error"); }
+  }
+  async function off() {
+    setMsg("");
+    try { setState(await disablePush()); } catch { setState("error"); }
+  }
+  async function test() {
+    const r = await api("/parents/me/push-test", { auth: true, body: {} }).catch(() => null);
+    setMsg(r ? (r.push === "sent" ? "테스트 알림을 보냈어요." : r.email ? "푸시를 보내지 못해 이메일로 보냈어요." : "알림함에 넣었어요.") : "보내지 못했어요.");
+  }
+  return (
+    <section className="card" aria-label="푸시 알림" data-testid="push-settings">
+      <h2>기기 푸시 알림</h2>
+      <p>안전 알림·연장 요청·주간 요약(구독)·무료 한도 안내를 이 기기로 받아요. 아이 대화 원문은 알림에 담기지 않아요.</p>
+      <p data-testid="push-state" data-state={state}>{state === "loading" ? "확인 중…" : PUSH_STATE_TEXT[state]}</p>
+      {state !== "on" && state !== "unsupported" && state !== "not_configured" && (
+        <button data-testid="push-on" onClick={on}>푸시 알림 켜기</button>)}
+      {state === "on" && <button className="secondary" data-testid="push-off" onClick={off}>푸시 알림 끄기</button>}
+      <button className="secondary" data-testid="push-test" onClick={test}>테스트 알림 보내기</button>
+      {msg && <p data-testid="push-msg">{msg}</p>}
+    </section>
+  );
+}
 
 export function Alerts() {
   const [reqs, setReqs] = useState<any[]>([]);
@@ -249,9 +282,9 @@ export function Alerts() {
         <h2>부모 PIN (아이 기기에서 시간 추가할 때)</h2>
         <input type="password" inputMode="numeric" data-testid="parent-pin" value={pin} onChange={(e) => setPin(e.target.value)} />
         <button data-testid="parent-pin-save" onClick={savePin}>저장</button>
-        <button className="secondary" onClick={() => typeof Notification !== "undefined" && Notification.requestPermission()}>기기 알림 켜기</button>
         {msg && <p data-testid="parent-pin-msg">{msg}</p>}
       </section>
+      <PushSettings />
       <section className="card" aria-label="알림">
         <h2>알림</h2>
         <ul>{[...notes].reverse().map((n) => <li key={n.seq} data-testid={`note-${n.kind}`}>{KIND[n.kind] ?? n.kind}{n.payload?.message ? ` — ${n.payload.message}` : ""}{n.payload?.nickname ? ` (${n.payload.nickname})` : ""}</li>)}</ul>
@@ -264,7 +297,8 @@ async function showSystemNotifications(items: any[]) {
   try {
     if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
     const reg = await navigator.serviceWorker?.ready;
-    for (const n of items) await reg?.showNotification("한자 튜터", { body: KIND[n.kind] ?? n.kind, icon: "/icon-192.png", tag: `n${n.seq}` });
+    if (await reg?.pushManager?.getSubscription()) return; // real Web Push already shows these
+    for (const n of items) await reg?.showNotification("한자 튜터", { body: KIND[n.kind] ?? n.kind, icon: "/icon-192.png", tag: `${n.kind}-${n.seq}` });
   } catch { /* notifications are best-effort */ }
 }
 

@@ -1,5 +1,5 @@
 /* Service worker: app-shell cache + offline fallback; never caches /api responses. */
-const CACHE = "hanja-shell-v1";
+const CACHE = "hanja-shell-v2";
 const SHELL = ["/", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (e) => {
@@ -28,7 +28,45 @@ self.addEventListener("fetch", (e) => {
   );
 });
 
+// Web Push (VAPID) from the backend's NotificationCenter: {title, body, kind, id, tag, url}.
+// The payload only carries system text (never a child's chat message).
 self.addEventListener("push", (e) => {
-  const d = e.data ? e.data.json() : { title: "한자 튜터", body: "" };
-  e.waitUntil(self.registration.showNotification(d.title, { body: d.body, icon: "/icon-192.png" }));
+  let d = {};
+  try {
+    d = e.data ? e.data.json() : {};
+  } catch (_) {
+    d = { body: e.data ? e.data.text() : "" };
+  }
+  const title = d.title || "한자 튜터";
+  e.waitUntil(
+    self.registration.showNotification(title, {
+      body: d.body || "",
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+      tag: d.tag || undefined,
+      data: { url: d.url || "/?alerts=1", kind: d.kind || null, id: d.id || null },
+    })
+  );
 });
+
+// Tapping a notification focuses an open app window and asks it to show the alerts tab (a message, not a
+// navigation, so the parent's in-memory session survives) or opens a new window on /?alerts=1.
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const target = new URL((e.notification.data && e.notification.data.url) || "/?alerts=1", self.location.origin);
+  if (target.origin !== self.location.origin) return; // never open foreign URLs
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
+      for (const w of wins) {
+        if (new URL(w.url).origin === self.location.origin && "focus" in w) {
+          w.postMessage({ type: "open-alerts", kind: e.notification.data && e.notification.data.kind });
+          return w.focus();
+        }
+      }
+      return self.clients.openWindow(target.href);
+    })
+  );
+});
+
+// The browser rotated the subscription: the next login re-registers it (no session in the worker).
+self.addEventListener("pushsubscriptionchange", () => {});
