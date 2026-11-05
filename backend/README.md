@@ -1,9 +1,17 @@
 # hanja-tutor backend
 
 ```
-python -m pip install -r backend/requirements.txt
-cd backend && python -m uvicorn app.main:app --port 8000      # frontend: BACKEND_URL=http://127.0.0.1:8000
+python -m venv .venv                                           # at the repo root (gitignored)
+.venv/Scripts/python -m pip install -r backend/requirements.txt   # macOS/Linux: .venv/bin/python
+cd backend && ../.venv/Scripts/python -m uvicorn app.main:app --port 8000   # frontend: BACKEND_URL=http://127.0.0.1:8000
 ```
+
+**Why the repo-root `.venv` is required:** the npm test scripts call plain `python`. The Ouroboros evaluator runs
+Stage 1 (`npm --prefix frontend run test:all`) inside its MCP server's environment, where `python` resolves to the
+server's own isolated interpreter (no psycopg, pixeltable-pgserver, langgraph). It puts the checkout's `.venv`
+(or `venv`) first on `PATH`, so with a repo-root `.venv` holding `backend/requirements.txt` Stage 1 uses the right
+interpreter. Without it Stage 1 fails with `ModuleNotFoundError: No module named 'psycopg'` (seen in evaluation
+job_e52c689e277e) or, before psycopg was a hard import, silently skipped the embedded-PostgreSQL tests.
 
 ## Configuration (`backend/.env`)
 
