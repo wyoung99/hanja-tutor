@@ -120,14 +120,43 @@
 
 ---
 
-## 4. 획순 데이터 (`data/stroke_data/`): 수집하지 않음
+## 4. 획순 데이터 (`data/stroke_data/`)
 
-> **결정(2026-11-05): 한국 기준 획순 대조는 검증에서 제외한다.** 앱은 hanzi-writer(Make Me a Hanzi) 획순 데이터를 그대로 쓰고,
-> 한국 교육용 획순과 다른 글자는 나중에 글자별 제외 플래그로 채점에서 뺄 수 있게만 둔다. 아래 계획은 참고용으로 남긴다.
+> **결정(2026-11-05): 한국 기준 획순 대조는 검증에서 제외한다**(Seed AC7 `verify_exemption_reason`).
+> 앱은 hanzi-writer(Make Me a Hanzi) 획순 데이터를 그대로 쓴다. 한국 교육용 획순과 다른 글자는 나중에
+> 글자별 `exclude_from_grading` 플래그로 채점과 쓰기 문항에서 뺄 수 있게 자리만 두었다(현재 모두 `false`).
 
-AC7은 "한국 기준 참조 데이터와 100% 일치"를 요구한다. 그런데 **기계 판독 가능하고 재배포가 가능한 한국 표준 필순 데이터를 찾지 못했다.** 중국·일본 데이터를 "Korean reference"라는 이름으로 넣지 않기 위해 `strokes.json`과 `korean_reference.json`은 만들지 않았다.
+### 출처
+| 항목 | 값 |
+|---|---|
+| 패키지 | npm `hanzi-writer-data` **2.0.1** (정확한 버전 고정, 레지스트리 수정일 2022-05-04) |
+| 받은 방법 | 빈 임시 디렉터리에서 `npm pack hanzi-writer-data@2.0.1 --ignore-scripts` (조회일 2026-11-05). 압축은 풀지 않고 `tarfile`로 `package/<글자>.json`의 `medians` 숫자 배열만 읽음. 패키지 코드는 실행하지 않음 |
+| tarball SHA-256 | 72baf3d82b114e60d6e40ea05f24d2262a05cd39d544e2f322ba2fceb7beff15 |
+| npm integrity | sha512-nbQwM+MaryGoq7pBMIZLCd3lFq03nXuJuwku1+6UbjL58uU+9OULVcMkoNvNuJSoIV7f1bbPRfD4D/LQa5S7qg== |
+| 원천 | Make Me a Hanzi (https://github.com/skishore/makemeahanzi), Arphic Technology 글꼴에서 추출 |
+| 생성 스크립트 | `python -I backend/tracing/build_stroke_data.py <tgz>` → `strokes.json` (재현 가능) |
 
-필요한 스키마는 `backend/tracing/strokes.py` 기준이다. `{ "<char>": { "strokes": [[[x,y],...], ...], "reviewed": bool } }` 형태이고, hanzi-writer 1000×1000 좌표계를 쓰며 각 획은 중심선(median) 폴리라인이다. `korean_reference.json`은 reviewed 기본값이 true이고, 비교 허용오차는 eps=0(완전 일치)이다.
+### 라이선스
+- hanzi-writer-data의 획 데이터는 **Arphic Public License**를 따른다. 원문은 `data/stroke_data/ARPHICPL.TXT`(패키지 동봉 파일 그대로)다.
+  상위 프로젝트 Make Me a Hanzi는 획 그래픽(`graphics.txt`)을 Arphic Public License로, 사전 데이터(`dictionary.txt`)를 LGPL로 배포한다.
+  이 앱은 획 중심선(median)만 쓰므로 Arphic Public License 계열이다.
+- APL은 수정본을 같은 라이선스로 배포하고 라이선스 사본을 함께 줄 것을 요구한다. `strokes.json`은 좌표를 변환한 파생물이다.
+- **로컬 시험용으로만 사용한다.** 외부 배포나 서비스 출시 전에 라이선스 고지 방식을 다시 확인한다.
+
+### 형식과 좌표
+- `strokes.json` = `{"_source": {...}, "chars": {"<NFC 글자>": {"strokes": [[[x,y],...],...], "exclude_from_grading": false}}}`.
+- 좌표는 앱의 0..1000 화면 좌표(y는 아래로 증가)다. 원본은 1024 단위이고 y가 위로 증가하므로 `x' = x·1000/1024`, `y' = (900 − y)·1000/1024`로 바꿨다(hanzi-writer의 표시 변환과 같다).
+- 키는 NFC 통합 한자다. 공식 목록의 호환 코드(金 U+F90A 등)는 NFC로 바꿔서 찾는다.
+
+### 범위
+- 배정 한자(두 기관 합집합, NFC) 1166자 중 **1146자에 획 데이터가 있다.**
+- **획 데이터가 없는 20자**는 따라쓰기와 모의고사 쓰기 문항에서 빠진다. 대부분 한국에서 쓰는 이체자 코드포인트라서 hanzi-writer(중국 자형)에 없다.
+  敎(U+654E) 飮(U+98EE) 窓(U+7A93) 淸(U+6DF8) 擧(U+64E7) 氷(U+6C37) 査(U+67FB) 硏(U+784F) 爲(U+7232) 絶(U+7D76)
+  眞(U+771E) 鄕(U+9115) 鑛(U+945B) 姉(U+59C9) 鬪(U+9B2A) 旣(U+65E3) 郞(U+90DE) 晩(U+6669) 顔(U+9854) 卽(U+537D)
+  (`strokes.json`의 `_source.missing`에도 같은 목록이 있다.) 다른 코드포인트(예: 教·飲)의 데이터로 대체하지 않았다. 자형이 다르기 때문이다.
+
+### 참고: 한국 기준 참조 데이터 조사 (검증 제외, 기록용)
+아래는 결정 이전에 조사한 내용이다. 기계 판독 가능하고 재배포 가능한 한국 표준 필순 데이터는 찾지 못했다. 그래서 `korean_reference.json`은 만들지 않는다.
 
 | 후보 | 기준 | 형식 | 라이선스 | 판단 |
 |---|---|---|---|---|
@@ -139,7 +168,7 @@ AC7은 "한국 기준 참조 데이터와 100% 일치"를 요구한다. 그런�
 | hanzi-writer-data-youyin | 혼합(makemeahanzi+jp+animCJK) | hanzi-writer JSON | MIT 표기(상위 라이선스 확인 필요) | 한국 기준 아님 |
 | Wikimedia Commons Stroke Order Project | PRC/ROC/일본 3기준 | 그림(GIF/SVG) | CC 계열 | 한국 기준 없음 |
 
-### 권장 계획
+### 권장 계획 (결정 이전 기록)
 1. **기준 결정(사용자).** AC7의 "한국 기준"을 무엇으로 볼지 정한다. 국가 표준이 없으므로 실질적인 선택지는 시행 기관(한국어문회·대한검정회)이 펴낸 필순이다. 두 기관의 필순이 다를 가능성도 함께 확인한다.
 2. **기반 데이터.** `strokes.json`은 Make Me a Hanzi(hanzi-writer 형식, 좌표계 일치)로 생성하고 `reviewed=false`로 둔다. 라이선스 고지(LGPL/Arphic)도 포함한다.
 3. **한국 참조 구축.** 선택한 기관 교재의 필순(획 순서·방향·획수)을 사람이 글자별로 확인한다. 기반 데이터와 다르면 획 순서를 재배열하거나 분할·병합해 교정하고, 교정본을 `korean_reference.json`으로 만든다. 1차 범위는 쓰기 대상만으로 잡는다. 어문회는 쓰기 배정이 6II급 50자부터 4급 500자까지이고, 검정회는 쓰기 범위를 별도로 확인해야 한다.
