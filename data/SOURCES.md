@@ -92,8 +92,14 @@
 `8,7,6,준5,5,준4,4,준3,3`(공식 등급 순서)으로 바꾸고, 준급 배정 380행을 `assignments.csv`에 합쳤다.
 - 누적이 공식값과 같아졌다: 5급 250, 4급 600, 3급 1000.
 - verify.py 대조: 18개 급수 모두 공식 목록 대비 누락·초과 0.
-- **남은 일:** 준급 모의고사 형식(문항 수·시간·합격선)은 공식 자료를 확보하지 못해 `exam_formats.json`에 넣지 않았다.
-  출제 형식을 지어내지 않기 위해, 기관 공고를 확인한 뒤 운영자가 추가해야 한다.
+- **모의고사 형식 (2026-11-05):** 준급을 포함한 대한검정회 형식은 사용자가 제공한 기관 안내 표
+  (`official_lists/daegeom/exam_formats_official.json`), 한국어문회 형식은 hanja.re.kr 출제기준·합격기준·시험시간
+  (`official_lists/korea_eomunhoe/exam_formats_official.json`)에서 가져온다. `exam_formats.json`은 이 두 파일에서
+  `backend/mockexam/make_formats.py`로 생성하고 `backend/tests/test_exam_formats_official.py`가 일치를 검사한다.
+  대한검정회 유형별 구성은 공개되지 않아 앱 자체 객관식 구성(`type_mix: app_defined`)이고, 한국어문회의 어휘 데이터가
+  필요한 유형은 가장 가까운 유형으로 대체해 `substitutions`에 기록한다(`type_mix: partial_substitution`).
+  部首는 `eomunhoe-hanja.csv`의 `radical`, 筆順 정답은 `stroke_data/strokes.json`(hanzi-writer, 한국 표준 획순 대조는
+  검증 제외)이며 획 수가 CSV `total_strokes`와 같은 글자만 출제한다.
 
 ### 라이선스/약관
 - 사이트 하단: "Copyright 2003 사단법인 대한민국한자교육연구회·대한검정회. All Right Reserved."
