@@ -8,11 +8,59 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Mapping, Optional
 
+import logging
+import os
+import sys
+from contextlib import contextmanager
+
 _SERVERS: dict = {}
 
 
 class EmbeddedPostgresUnavailable(RuntimeError):
     pass
+
+
+def ensure_windows_env() -> list:
+    """Postgres on Windows needs SystemRoot/windir (its CryptoAPI random source fails without them: initdb's
+    bootstrap PANICs "could not generate secret authorization token", exit 0xC0000409). A process started with
+    a stripped environment (sandboxed runners) lacks them; restore them from the OS before starting the server.
+    Returns the names that were added."""
+    if sys.platform != "win32":
+        return []
+    added = []
+    root = os.environ.get("SystemRoot") or os.environ.get("windir")
+    if not root:
+        import ctypes
+
+        buf = ctypes.create_unicode_buffer(260)
+        ctypes.windll.kernel32.GetSystemWindowsDirectoryW(buf, 260)
+        root = buf.value or r"C:\Windows"
+    for k in ("SystemRoot", "windir"):
+        if not os.environ.get(k):
+            os.environ[k] = root
+            added.append(k)
+    return added
+
+
+@contextmanager
+def _captured_pgserver_errors(lines: list):
+    """Collect pixeltable_pgserver's error log (it holds initdb/pg_ctl stdout+stderr) for the exception text."""
+    class H(logging.Handler):
+        def emit(self, record):
+            lines.append(record.getMessage())
+
+    lg = logging.getLogger("pixeltable_pgserver")
+    h = H(level=logging.ERROR)
+    lg.addHandler(h)
+    try:
+        yield
+    finally:
+        lg.removeHandler(h)
+
+
+def _unavailable(e: Exception, lines: list) -> EmbeddedPostgresUnavailable:
+    detail = "\n".join(lines)[-3000:]
+    return EmbeddedPostgresUnavailable(f"{type(e).__name__}: {e}" + (f"\n{detail}" if detail else ""))
 
 
 def start_embedded_postgres(data_dir: Path, cleanup: Optional[str] = "stop") -> str:
@@ -25,10 +73,13 @@ def start_embedded_postgres(data_dir: Path, cleanup: Optional[str] = "stop") -> 
     except ImportError as e:  # pragma: no cover - dependency missing
         raise EmbeddedPostgresUnavailable(f"pixeltable-pgserver not installed ({e})") from e
     data_dir.parent.mkdir(parents=True, exist_ok=True)
+    ensure_windows_env()
+    lines: list = []
     try:
-        srv = pgs.get_server(data_dir, cleanup_mode=cleanup)
+        with _captured_pgserver_errors(lines):
+            srv = pgs.get_server(data_dir, cleanup_mode=cleanup)
     except Exception as e:  # noqa: BLE001
-        raise EmbeddedPostgresUnavailable(f"{type(e).__name__}: {e}") from e
+        raise _unavailable(e, lines) from e
     _SERVERS[data_dir] = srv
     return srv.get_uri()
 
@@ -41,10 +92,13 @@ def start_embedded_postgres_server(data_dir: Path):
     except ImportError as e:  # pragma: no cover
         raise EmbeddedPostgresUnavailable(f"pixeltable-pgserver not installed ({e})") from e
     data_dir.parent.mkdir(parents=True, exist_ok=True)
+    ensure_windows_env()
+    lines: list = []
     try:
-        return pgs.get_server(data_dir, cleanup_mode="delete")
+        with _captured_pgserver_errors(lines):
+            return pgs.get_server(data_dir, cleanup_mode="delete")
     except Exception as e:  # noqa: BLE001
-        raise EmbeddedPostgresUnavailable(f"{type(e).__name__}: {e}") from e
+        raise _unavailable(e, lines) from e
 
 
 def postgres_processes(data_dir: Path) -> list:
