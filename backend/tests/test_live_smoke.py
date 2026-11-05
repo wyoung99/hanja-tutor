@@ -6,7 +6,7 @@ Missing AWS credentials or OPENDICT_API_KEY make these tests FAIL -- never skip 
 set is to prove the real calls work.
 
 Calls per run (approx.): Haiku 4.5 1 chat + 1 classifier; Sonnet 4.6 1 question generation; 우리말샘 1 lookup;
-p95 run on a local uvicorn: 1 warm-up + 10 measured questions, each = 1 Haiku classifier call + 1 Haiku
+p95 run on a local uvicorn: 1 warm-up + 30 measured questions, each = 1 Haiku classifier call + 1 Haiku
 streamed answer -> ~22 Haiku calls. Total ~25 Bedrock calls + 1 dictionary call. The 114-case labelled
 safety set is NOT part of this (it stays in ``bedrock_live``).
 """
@@ -31,7 +31,7 @@ from mockexam.questions import Hanja, generate_ai_questions, verify_question
 pytestmark = pytest.mark.live_smoke
 ROOT = Path(__file__).resolve().parents[2]
 STORE = HanjaStore.load()
-P95_N = 10
+P95_N = 30  # 10 made p95 ~= the single slowest call, so one slow Bedrock reply failed Stage 1
 P95_OUT = ROOT / "reports" / "p95-eval.json"
 
 
@@ -114,7 +114,7 @@ def test_p95_first_token_under_3s_on_local_uvicorn(live_env):
             health = c.get("/api/health").json()
             cid = m.setup_child(c)
             m.ask(c, cid, "一은 무슨 뜻이에요?")  # warm-up, not counted
-            samples = [m.ask(c, cid, m.QUESTIONS[i]) for i in range(P95_N)]
+            samples = [m.ask(c, cid, m.QUESTIONS[i % len(m.QUESTIONS)]) for i in range(P95_N)]
     finally:
         proc.terminate()
         proc.wait(timeout=30)
