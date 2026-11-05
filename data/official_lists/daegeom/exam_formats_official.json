@@ -1,0 +1,20 @@
+{
+  "_comment": "대한검정회 한자급수자격검정 공식 시험 형식(8급~3급, 준급 포함). 2026-11-05 사용자가 기관 안내 표를 옮겨 제공. 앱의 data/exam_formats.json을 검증·생성할 때 기준으로 쓴다.",
+  "source": "사용자 제공(대한검정회 검정과목 및 출제형식, 합격기준 안내 표), 2026-11-05",
+  "notes": [
+    "3급 이하는 모두 필기시험 객관식이다(주관식·쓰기 문항 없음).",
+    "유형별 문항 구성은 공개 표에 없다('한문지식'). 앱은 객관식 유형 비율을 자체 설정으로 두되 공식값으로 표시하지 않는다.",
+    "합격기준: 3급~6급 70점 이상(1문항당 2점) = 50문항 중 35문항 이상, 7급·8급 70점 이상(1문항당 4점) = 25문항 중 18문항 이상."
+  ],
+  "grades": {
+    "8":  {"total": 25, "pass_questions": 18, "points_per_question": 4, "pass_points": 70, "minutes": 40, "format": "객관식(25)", "assigned_cumulative": 30},
+    "7":  {"total": 25, "pass_questions": 18, "points_per_question": 4, "pass_points": 70, "minutes": 40, "format": "객관식(25)", "assigned_cumulative": 50},
+    "6":  {"total": 50, "pass_questions": 35, "points_per_question": 2, "pass_points": 70, "minutes": 40, "format": "객관식(50)", "assigned_cumulative": 70},
+    "준5": {"total": 50, "pass_questions": 35, "points_per_question": 2, "pass_points": 70, "minutes": 40, "format": "객관식(50)", "assigned_cumulative": 100},
+    "5":  {"total": 50, "pass_questions": 35, "points_per_question": 2, "pass_points": 70, "minutes": 40, "format": "객관식(50)", "assigned_cumulative": 250},
+    "준4": {"total": 50, "pass_questions": 35, "points_per_question": 2, "pass_points": 70, "minutes": 40, "format": "객관식(50)", "assigned_cumulative": 400},
+    "4":  {"total": 50, "pass_questions": 35, "points_per_question": 2, "pass_points": 70, "minutes": 40, "format": "객관식(50)", "assigned_cumulative": 600},
+    "준3": {"total": 50, "pass_questions": 35, "points_per_question": 2, "pass_points": 70, "minutes": 40, "format": "객관식(50)", "assigned_cumulative": 800},
+    "3":  {"total": 50, "pass_questions": 35, "points_per_question": 2, "pass_points": 70, "minutes": 40, "format": "객관식(50)", "assigned_cumulative": 1000}
+  }
+}
