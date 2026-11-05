@@ -1,0 +1,51 @@
+{
+  "_comment": "한국어문회 한자능력검정시험 공식 출제기준(8급~4급). 2026-11-05 조회. 숫자는 각 페이지의 표를 그대로 옮김. 앱의 data/exam_formats.json을 검증·생성할 때 기준으로 쓴다.",
+  "sources": {
+    "types": "https://www.hanja.re.kr/kccpt/exam/questInfo.do",
+    "pass": "https://www.hanja.re.kr/kccpt/exam/successRule.do",
+    "minutes": "https://www.hanja.re.kr/kccpt/exam/examTime.do",
+    "assigned": "https://www.hanja.re.kr/kccpt/exam/levelConfirm.do"
+  },
+  "retrieved": "2026-11-05",
+  "notes": [
+    "questInfo.do: 출제기준표는 기본지침자료로서, 출제자의 의도에 따라 차이가 있을 수 있습니다.",
+    "successRule.do: 2급~8급은 70% 이상 득점하면 합격입니다.",
+    "長短音은 4급 이상에서만 출제된다(questInfo.do 문제유형 설명).",
+    "시행일, 공인급수/교육급수 구분은 네 페이지 어디에도 없음."
+  ],
+  "type_labels": {
+    "dokeum": "讀音",
+    "hunum": "訓音",
+    "jangdaneum": "長短音",
+    "baneuieo": "反義語(相對語)",
+    "wanseong": "完成型(成語)",
+    "busu": "部首",
+    "dongeuieo": "同義語(類義語)",
+    "dongeumieuieo": "同音異義語",
+    "tteutpuri": "뜻풀이",
+    "yakja": "略字",
+    "hanja_sseugi": "漢字 쓰기",
+    "pilsun": "筆順",
+    "hanmun": "漢文"
+  },
+  "grades": {
+    "8":   {"total": 50,  "pass": 35, "minutes": 50, "assigned_read": 50,   "assigned_write": null,
+            "types": {"dokeum": 24, "hunum": 24, "pilsun": 2}},
+    "7II": {"total": 60,  "pass": 42, "minutes": 50, "assigned_read": 100,  "assigned_write": null,
+            "types": {"dokeum": 22, "hunum": 30, "baneuieo": 2, "wanseong": 2, "tteutpuri": 2, "pilsun": 2}},
+    "7":   {"total": 70,  "pass": 49, "minutes": 50, "assigned_read": 150,  "assigned_write": null,
+            "types": {"dokeum": 32, "hunum": 30, "baneuieo": 2, "wanseong": 2, "tteutpuri": 2, "pilsun": 2}},
+    "6II": {"total": 80,  "pass": 56, "minutes": 50, "assigned_read": 225,  "assigned_write": 50,
+            "types": {"dokeum": 32, "hunum": 29, "baneuieo": 2, "wanseong": 2, "tteutpuri": 2, "hanja_sseugi": 10, "pilsun": 3}},
+    "6":   {"total": 90,  "pass": 63, "minutes": 50, "assigned_read": 300,  "assigned_write": 150,
+            "types": {"dokeum": 33, "hunum": 22, "baneuieo": 3, "wanseong": 3, "dongeuieo": 2, "dongeumieuieo": 2, "tteutpuri": 2, "hanja_sseugi": 20, "pilsun": 3}},
+    "5II": {"total": 100, "pass": 70, "minutes": 50, "assigned_read": 400,  "assigned_write": 225,
+            "types": {"dokeum": 35, "hunum": 23, "baneuieo": 3, "wanseong": 4, "dongeuieo": 3, "dongeumieuieo": 3, "tteutpuri": 3, "yakja": 3, "hanja_sseugi": 20, "pilsun": 3}},
+    "5":   {"total": 100, "pass": 70, "minutes": 50, "assigned_read": 500,  "assigned_write": 300,
+            "types": {"dokeum": 35, "hunum": 23, "baneuieo": 3, "wanseong": 4, "dongeuieo": 3, "dongeumieuieo": 3, "tteutpuri": 3, "yakja": 3, "hanja_sseugi": 20, "pilsun": 3}},
+    "4II": {"total": 100, "pass": 70, "minutes": 50, "assigned_read": 750,  "assigned_write": 400,
+            "types": {"dokeum": 35, "hunum": 22, "baneuieo": 3, "wanseong": 5, "busu": 3, "dongeuieo": 3, "dongeumieuieo": 3, "tteutpuri": 3, "yakja": 3, "hanja_sseugi": 20}},
+    "4":   {"total": 100, "pass": 70, "minutes": 50, "assigned_read": 1000, "assigned_write": 500,
+            "types": {"dokeum": 32, "hunum": 22, "jangdaneum": 3, "baneuieo": 3, "wanseong": 5, "busu": 3, "dongeuieo": 3, "dongeumieuieo": 3, "tteutpuri": 3, "yakja": 3, "hanja_sseugi": 20}}
+  }
+}
