@@ -8,7 +8,11 @@
     "start": "next start -p 3000",
     "test": "vitest run",
     "test:all": "vitest run && cd .. && python -m pytest backend/tests -q -p no:cacheprovider",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "e2e": "playwright test",
+    "test:live": "cd .. && python -m pytest backend/tests/test_live.py -m \"bedrock_live or urimalsaem_live\" -p no:cacheprovider -rs",
+    "measure:p95": "cd .. && python backend/scripts/measure_p95.py --n 20",
+    "lighthouse": "node scripts/lighthouse-pwa.mjs"
   },
   "dependencies": {
     "next": "^15.0.0",
@@ -19,6 +23,8 @@
     "@playwright/test": "^1.49.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
+    "chrome-launcher": "1.1.2",
+    "lighthouse": "11.7.1",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   }

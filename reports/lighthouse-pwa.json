@@ -1,0 +1,37 @@
+{
+  "measured_at": "2026-11-05T05:37:37.365Z",
+  "environment": "local next start + uvicorn",
+  "url": "http://localhost:3310/",
+  "lighthouse_version": "11.7.1",
+  "browser": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+  "pwa_score": 1,
+  "installable": true,
+  "service_worker_note": "verified by installable-manifest (service worker controlling start_url)",
+  "audits": {
+    "installable-manifest": {
+      "score": 1,
+      "title": "Web app manifest and service worker meet the installability requirements"
+    },
+    "splash-screen": {
+      "score": 1,
+      "title": "Configured for a custom splash screen"
+    },
+    "themed-omnibox": {
+      "score": 1,
+      "title": "Sets a theme color for the address bar."
+    },
+    "maskable-icon": {
+      "score": 1,
+      "title": "Manifest has a maskable icon"
+    },
+    "content-width": {
+      "score": 1,
+      "title": "Content is sized correctly for the viewport"
+    },
+    "viewport": {
+      "score": 1,
+      "title": "Has a `<meta name=\"viewport\">` tag with `width` or `initial-scale`"
+    }
+  },
+  "run_warnings": []
+}
