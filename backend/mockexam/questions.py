@@ -161,8 +161,14 @@ def audit_error_rate(sample: Sequence[Question], db: Dict[str, Hanja]) -> Tuple[
 
 
 AI_SYSTEM = (
-    "너는 한자 시험 출제자다. 주어진 한자들에 대해 JSON 배열만 출력한다. 각 원소: "
-    '{"type":"eum|hun_eum|hun_to_hanja","char":"한자","options":[...],"answer":"...","explanation":"..."}'
+    "너는 초등학생 한자 급수 시험 출제자다. 사용자가 'X: 훈 A, 음 B' 형식으로 준 값만 정답 근거로 쓴다. "
+    "설명 없이 JSON 배열만 출력한다. 각 원소: "
+    '{"type":"eum|hun_eum|hun_to_hanja","char":"X","options":[보기 4개],"answer":"...","explanation":"...",'
+    '"prompt":"(hun_to_hanja만) 문제 문장"}. '
+    "규칙: char는 항상 문제의 대상 한자 X 한 글자다. eum의 정답은 B, hun_eum의 정답은 'A B'(훈과 음 사이 공백 하나), "
+    "hun_to_hanja는 prompt에 'A B'를 그대로 넣고 보기는 한자 한 글자씩이며 정답은 X다. 보기 4개는 서로 다르고 정답은 "
+    "정확히 하나다. explanation에는 반드시 'A B'를 글자 그대로 포함한다. 보기와 해설에는 목록에 있는 한자만 쓴다. "
+    "한자마다 문항 1개."
 )
 
 
