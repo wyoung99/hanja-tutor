@@ -43,3 +43,23 @@ def database_url(env: Mapping[str, str]) -> Optional[str]:
             d = Path(__file__).resolve().parents[1] / d
         return start_embedded_postgres(d)
     return None
+
+
+def stop_embedded_postgres(data_dir: Path) -> bool:
+    """Stop an embedded server left running for data_dir (e.g. after uvicorn was killed). True if stopped."""
+    data_dir = Path(data_dir).resolve()
+    if not (data_dir / "postmaster.pid").exists():
+        return False
+    from pixeltable_pgserver.pgexec import pgexec
+    from pixeltable_pgserver.utils import POSTGRES_VERSIONS, TARGET_POSTGRES_VERSION
+
+    pgexec("pg_ctl", ("-w", "-D", str(data_dir), "stop", "-m", "fast"),
+           bin_path=POSTGRES_VERSIONS[TARGET_POSTGRES_VERSION], user=None)
+    return True
+
+
+if __name__ == "__main__":  # python -m db.pg stop <dir>
+    import sys
+
+    if len(sys.argv) == 3 and sys.argv[1] == "stop":
+        print("stopped" if stop_embedded_postgres(Path(sys.argv[2])) else "not running")

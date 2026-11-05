@@ -1,10 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
-import { api, ApiError, childLockMessage, session, won } from "../lib/api";
-import StrokePad from "../components/StrokePad";
-import { gradeLabel, type Pt } from "../lib/strokes";
+import { api, ApiError, session, won } from "../lib/api";
+import { gradeLabel } from "../lib/strokes";
+import { Chat, Exam, reading, ScreenGuard, Tracing, type Card, type Child } from "../components/ChildPanels";
+import { Account, Alerts, ChildCard, Reports } from "../components/ParentPanels";
 
-type Child = { id: string; nickname: string; ai_consent: boolean; target: string[] };
 type ExamInfo = { status: "available" | "format_pending" | "unsupported"; message: string | null };
 type Catalog = { body: string; name: string; grades: string[]; exam: Record<string, ExamInfo> }[];
 type View = "auth" | "parent" | "child";
@@ -22,6 +22,7 @@ export default function Home() {
             setChild(c);
             setView("child");
           }}
+          onLoggedOut={() => { session.token = null; setView("auth"); }}
         />
       )}
       {view === "child" && child && <ChildApp child={child} onExit={() => setView("parent")} />}
@@ -69,7 +70,7 @@ function Auth({ onDone }: { onDone: () => void }) {
 }
 
 // ---------------------------------------------------------------- parent
-function Parent({ onEnter }: { onEnter: (c: Child) => void }) {
+function Parent({ onEnter, onLoggedOut }: { onEnter: (c: Child) => void; onLoggedOut: () => void }) {
   const [kids, setKids] = useState<Child[]>([]);
   const [catalog, setCatalog] = useState<Catalog>([]);
   const [nick, setNick] = useState("");
@@ -77,7 +78,7 @@ function Parent({ onEnter }: { onEnter: (c: Child) => void }) {
   const [ai, setAi] = useState(false);
   const [body, setBody] = useState("");
   const [grade, setGrade] = useState("");
-  const [tab, setTab] = useState<"kids" | "report" | "billing">("kids");
+  const [tab, setTab] = useState<"kids" | "report" | "alerts" | "billing" | "account">("kids");
   const [err, setErr] = useState("");
   const reload = async () => setKids(await api("/children", { auth: true }));
   useEffect(() => {
@@ -106,9 +107,11 @@ function Parent({ onEnter }: { onEnter: (c: Child) => void }) {
   return (
     <>
       <nav>
-        <button className="secondary" onClick={() => setTab("kids")}>자녀</button>
-        <button className="secondary" data-testid="tab-report" onClick={() => setTab("report")}>리포트</button>
+        <button className="secondary" data-testid="tab-kids" onClick={() => { setTab("kids"); reload(); }}>자녀</button>
+        <button className="secondary" data-testid="tab-report" onClick={() => setTab("report")}>리포트·대화</button>
+        <button className="secondary" data-testid="tab-alerts" onClick={() => setTab("alerts")}>알림</button>
         <button className="secondary" data-testid="tab-billing" onClick={() => setTab("billing")}>구독</button>
+        <button className="secondary" data-testid="tab-account" onClick={() => setTab("account")}>계정</button>
       </nav>
       {tab === "kids" && (
         <>
@@ -134,55 +137,20 @@ function Parent({ onEnter }: { onEnter: (c: Child) => void }) {
             {err && <p className="err" role="alert">{err}</p>}
           </section>
           {kids.map((k) => (
-            <section className="card" key={k.id} data-testid="child-card">
-              <strong>{k.nickname}</strong> · {catalog.find((c) => c.body === k.target[0])?.name ?? k.target[0]} {k.target[1] ? gradeLabel(k.target[1]) : ""}
-              <div><button data-testid={`enter-${k.nickname}`} onClick={() => onEnter(k)}>공부 시작</button></div>
-            </section>
+            <ChildCard key={k.id} k={k} bodyName={catalog.find((c) => c.body === k.target[0])?.name ?? k.target[0]}
+              onEnter={() => onEnter(k)} reload={reload} />
           ))}
         </>
       )}
       {tab === "report" && <Reports kids={kids} />}
+      {tab === "alerts" && <Alerts />}
       {tab === "billing" && <Billing />}
+      {tab === "account" && <Account onDeleted={onLoggedOut} />}
     </>
   );
 }
 
-// ---------------------------------------------------------------- reports (parent only)
-function Reports({ kids }: { kids: Child[] }) {
-  const [basic, setBasic] = useState<any>(null);
-  const [detail, setDetail] = useState<any>(null);
-  const [msg, setMsg] = useState("");
-  const k = kids[0];
-  useEffect(() => {
-    if (k) api(`/children/${k.id}/report/basic`, { auth: true }).then(setBasic).catch(() => undefined);
-  }, [k?.id]);
-  if (!k) return <p>자녀를 먼저 만들어 주세요.</p>;
-  async function loadDetail() {
-    setMsg("");
-    try {
-      setDetail(await api(`/children/${k.id}/report/detailed`, { auth: true }));
-    } catch (e) {
-      setMsg(e instanceof ApiError && e.status === 402 ? "상세 리포트는 구독 전용이에요." : "오류가 발생했어요.");
-    }
-  }
-  return (
-    <section className="card" aria-label="리포트">
-      <h2>{k.nickname} 기본 리포트 (무료)</h2>
-      {basic && (
-        <ul data-testid="basic-report">
-          <li>학습 시간: {basic.study_minutes_total}분</li>
-          <li>오늘의 한자 완료율: {basic.todays_hanja.completion_rate == null ? "-" : Math.round(basic.todays_hanja.completion_rate * 100) + "%"}</li>
-          <li>복습 정답률: {basic.review.accuracy == null ? "-" : Math.round(basic.review.accuracy * 100) + "%"}</li>
-        </ul>
-      )}
-      <button data-testid="detail-report" onClick={loadDetail}>상세 리포트 보기</button>
-      {msg && <p role="alert" data-testid="detail-msg">{msg}</p>}
-      {detail && <pre data-testid="detail-body">{JSON.stringify(detail, null, 1)}</pre>}
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------- billing (parent only)
+// ---------------------------------------------------------------- billing (parent only; AC14/AC15 implement-only)
 function Billing() {
   const [plans, setPlans] = useState<any[]>([]);
   const [sub, setSub] = useState<any>(null);
@@ -271,13 +239,6 @@ function loadScript(src: string) {
 }
 
 // ---------------------------------------------------------------- child
-type Card = { char: string; hun: string | null; eum: string | null; reviewed: boolean; strokes: number; tracing: "graded" | "animation_only" | "unavailable" };
-
-/** 훈·음 of the child's selected exam body (empty source rows await human review). */
-function reading(c: Card) {
-  return c.hun && c.eum ? `${c.hun} ${c.eum}` : "훈·음 검수 중";
-}
-
 function ChildApp({ child, onExit }: { child: Child; onExit: () => void }) {
   const [unlocked, setUnlocked] = useState(false);
   const [pin, setPin] = useState("");
@@ -285,7 +246,10 @@ function ChildApp({ child, onExit }: { child: Child; onExit: () => void }) {
   const [tab, setTab] = useState<"today" | "exam" | "chat">("today");
   async function unlock() {
     try { await api(`/children/${child.id}/verify-pin`, { body: { pin } }); setUnlocked(true); setErr(""); }
-    catch (e) { setErr(e instanceof ApiError && e.status === 423 ? "잠겼어요. 부모님께 알려 주세요." : "PIN이 달라요."); }
+    catch (e) {
+      if (e instanceof ApiError && e.status === 423) setErr("잠겼어요. 부모님께 PIN을 다시 정해 달라고 하세요.");
+      else setErr(`PIN이 달라요.${e instanceof ApiError && e.detail?.remaining != null ? ` (${e.detail.remaining}번 남았어요)` : ""}`);
+    }
   }
   if (!unlocked)
     return (
@@ -294,11 +258,11 @@ function ChildApp({ child, onExit }: { child: Child; onExit: () => void }) {
         <input data-testid="child-pin" type="password" inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value)} />
         <button data-testid="child-unlock" onClick={unlock}>들어가기</button>
         <button className="secondary" onClick={onExit}>뒤로</button>
-        {err && <p className="err" role="alert">{err}</p>}
+        {err && <p className="err" role="alert" data-testid="pin-error">{err}</p>}
       </section>
     );
   return (
-    <>
+    <ScreenGuard child={child}>
       <nav>
         <button className="secondary" data-testid="tab-today" onClick={() => setTab("today")}>오늘의 한자</button>
         <button className="secondary" data-testid="tab-exam" onClick={() => setTab("exam")}>모의고사</button>
@@ -308,7 +272,7 @@ function ChildApp({ child, onExit }: { child: Child; onExit: () => void }) {
       {tab === "today" && <Today child={child} />}
       {tab === "exam" && <Exam child={child} />}
       {tab === "chat" && <Chat child={child} />}
-    </>
+    </ScreenGuard>
   );
 }
 
@@ -316,14 +280,16 @@ function Today({ child }: { child: Child }) {
   const [data, setData] = useState<{ new: Card[]; reviews: Card[] } | null>(null);
   const [tracing, setTracing] = useState<Card | null>(null);
   const [done, setDone] = useState<string[]>([]);
-  const load = () => api(`/children/${child.id}/today`).then(setData);
+  const [msg, setMsg] = useState("");
+  const load = () => api(`/children/${child.id}/today`).then(setData)
+    .catch((e) => setMsg(e instanceof ApiError && e.status === 423 ? "지금은 쉬는 시간이에요." : "불러오지 못했어요."));
   useEffect(() => { load(); }, []);
   if (tracing)
     return <Tracing child={child} card={tracing} onDone={async (ok) => {
       if (ok) { await api(`/children/${child.id}/today/${tracing.char}/complete`, { body: {} }).catch(() => undefined); setDone((d) => [...d, tracing.char]); }
       setTracing(null);
     }} />;
-  if (!data) return <p>불러오는 중…</p>;
+  if (!data) return <p>{msg || "불러오는 중…"}</p>;
   return (
     <section className="card" aria-label="오늘의 한자">
       <h2>오늘의 한자</h2>
@@ -338,134 +304,11 @@ function Today({ child }: { child: Child }) {
       <h2>복습</h2>
       {data.reviews.length === 0 && <p>오늘 복습할 한자가 없어요.</p>}
       {data.reviews.map((c) => (
-        <div key={c.char}>{c.char} {reading(c)}
+        <div key={c.char} data-testid="review-card">{c.char} {reading(c)}
           <button onClick={async () => { await api(`/children/${child.id}/reviews/${c.char}`, { body: { correct: true } }); load(); }}>알아요</button>
           <button className="secondary" onClick={async () => { await api(`/children/${child.id}/reviews/${c.char}`, { body: { correct: false } }); load(); }}>몰라요</button>
         </div>
       ))}
-    </section>
-  );
-}
-
-function Tracing({ child, card, onDone }: { child: Child; card: Card; onDone: (ok: boolean) => void }) {
-  const [mode, setMode] = useState<string>("");
-  const [guide, setGuide] = useState<Pt[][]>([]);
-  const [highlight, setHighlight] = useState<Pt[] | null>(null);
-  const [msg, setMsg] = useState("획순대로 한 획씩 써 보세요.");
-  const [result, setResult] = useState("");
-  useEffect(() => {
-    api(`/children/${child.id}/tracing/${card.char}/start`, { body: {} }).then((r) => { setMode(r.mode); setGuide(r.strokes ?? []); });
-  }, []);
-  async function stroke(s: Pt[]) {
-    const r = await api(`/children/${child.id}/tracing/${card.char}/stroke`, { body: { stroke: s } });
-    setHighlight(r.reveal_answer ? r.answer_stroke : null);
-    if (r.done) { setResult(r.result); setMsg(r.result === "pass" ? "통과! 잘 썼어요 🎉" : "정답 획을 봐서 다시 도전이에요."); }
-    else if (r.ok) setMsg("좋아요! 다음 획이에요.");
-    else setMsg(r.reveal_answer ? "빨간 획이 정답이에요. 따라 써 볼까요?" : "다시 써 볼까요?");
-  }
-  return (
-    <section className="card" aria-label="따라쓰기">
-      <div className="big">{card.char}</div>
-      <p>{reading(card)}</p>
-      {mode === "unavailable" && <p data-testid="tracing-unavailable">이 글자는 획순 데이터가 없어서 따라쓰기를 할 수 없어요.</p>}
-      {mode === "animation_only" && <p data-testid="animation-only">이 글자는 획순만 볼 수 있어요(채점 제외).</p>}
-      {mode === "graded" && <StrokePad onStroke={stroke} disabled={!!result} guide={guide} highlight={highlight} />}
-      {mode === "animation_only" && <StrokePad onStroke={() => undefined} disabled guide={guide} />}
-      <p data-testid="trace-msg">{msg}</p>
-      {result && <button data-testid="trace-finish" onClick={() => onDone(result === "pass")}>끝내기</button>}
-      <button className="secondary" onClick={() => onDone(false)}>뒤로</button>
-    </section>
-  );
-}
-
-function Exam({ child }: { child: Child }) {
-  const [exam, setExam] = useState<any>(null);
-  const [answers, setAnswers] = useState<Record<string, unknown>>({});
-  const [result, setResult] = useState<any>(null);
-  const [msg, setMsg] = useState("");
-  const [strokes, setStrokes] = useState<Record<string, Pt[][]>>({});
-  async function start() {
-    setMsg("");
-    try { setExam(await api(`/children/${child.id}/exams`, { body: {} })); }
-    catch (e) {
-      if (e instanceof ApiError && e.status === 429) setMsg(childLockMessage("mockexam"));
-      else if (e instanceof ApiError && e.detail?.code === "exam_format_pending") setMsg("이 급수의 모의고사는 형식 준비 중이에요. 오늘의 한자와 따라쓰기로 공부해요!");
-      else setMsg("시작할 수 없어요.");
-    }
-  }
-  async function answer(qid: string, value: unknown) {
-    setAnswers((a) => ({ ...a, [qid]: value }));
-    await api(`/exams/${exam.exam_id}/answer`, { body: { question_id: qid, value } });
-  }
-  async function submit() { setResult(await api(`/exams/${exam.exam_id}/submit`, { body: {} })); }
-  if (result)
-    return (
-      <section className="card" data-testid="exam-result">
-        <h2>결과</h2>
-        <p data-testid="exam-score">{result.score} / {result.total}점</p>
-        <p data-testid="exam-pass">{result.passed ? "합격 🎉" : "불합격 — 다시 도전해요"}</p>
-      </section>
-    );
-  if (!exam)
-    return (
-      <section className="card">
-        <h2>모의고사 (실전형)</h2>
-        <button data-testid="exam-start" onClick={start}>시작하기</button>
-        {msg && <p data-testid="exam-msg">{msg}</p>}
-      </section>
-    );
-  return (
-    <section className="card" aria-label="모의고사">
-      <p>제한 시간 {exam.minutes}분 · 합격 {exam.pass_score}/{exam.total_score}점 · 문항 {exam.questions.length}개</p>
-      {exam.questions.map((q: any, i: number) => (
-        <div key={q.id} className="card" data-testid="exam-question">
-          <p>{i + 1}. {q.prompt}</p>
-          {q.type === "writing" ? (
-            <>
-              <StrokePad onStroke={(s) => {
-                const next = [...(strokes[q.id] ?? []), s];
-                setStrokes((m) => ({ ...m, [q.id]: next }));
-                answer(q.id, next);
-              }} />
-              <small>{(strokes[q.id] ?? []).length}획 입력됨</small>
-            </>
-          ) : q.options.length ? (
-            q.options.map((o: string) => (
-              <label key={o} className="check"><input type="radio" name={q.id} checked={answers[q.id] === o} onChange={() => answer(q.id, o)} />{o}</label>
-            ))
-          ) : (
-            <input value={(answers[q.id] as string) ?? ""} onChange={(e) => answer(q.id, e.target.value)} />
-          )}
-        </div>
-      ))}
-      <button data-testid="exam-submit" onClick={submit}>제출하기</button>
-    </section>
-  );
-}
-
-function Chat({ child }: { child: Child }) {
-  const [log, setLog] = useState<{ role: "user" | "bot"; text: string }[]>([]);
-  const [text, setText] = useState("");
-  const [locked, setLocked] = useState(false);
-  async function send() {
-    const m = text.trim();
-    if (!m) return;
-    setText("");
-    setLog((l) => [...l, { role: "user", text: m }]);
-    try {
-      const r = await api(`/children/${child.id}/chat`, { body: { message: m, thread_id: "t-" + child.id } });
-      if (r.status === "locked") { setLocked(true); setLog((l) => [...l, { role: "bot", text: childLockMessage("chatbot") }]); }
-      else setLog((l) => [...l, { role: "bot", text: r.reply }]);
-    } catch (e) {
-      setLog((l) => [...l, { role: "bot", text: e instanceof ApiError && e.status === 403 ? "부모님이 허락하면 쓸 수 있어요." : "지금은 답하기 어려워요. 잠시 뒤에 다시 물어봐 주세요." }]);
-    }
-  }
-  return (
-    <section className="card" aria-label="한자 친구">
-      <h2>한자 친구</h2>
-      <div data-testid="chat-log">{log.map((m, i) => <div key={i} className={`msg ${m.role}`} data-testid={`msg-${m.role}`}>{m.text}</div>)}</div>
-      <input data-testid="chat-input" value={text} disabled={locked} placeholder="한자나 낱말을 물어봐요" onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} />
-      <button data-testid="chat-send" disabled={locked} onClick={send}>보내기</button>
     </section>
   );
 }

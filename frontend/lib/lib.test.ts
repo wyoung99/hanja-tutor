@@ -37,3 +37,60 @@ describe("child copy", () => {
   });
   it("formats won", () => expect(won(5900)).toBe("5,900원"));
 });
+
+import { mmss, parseSse, pct } from "./api";
+
+describe("sse", () => {
+  it("parses complete frames and keeps the tail", () => {
+    const { events, rest } = parseSse('event: thread\ndata: {"type":"thread","thread_id":"a"}\n\nevent: token\ndata: {"type":"token","text":"學"}\n\nevent: do');
+    expect(events.map((e) => e.type)).toEqual(["thread", "token"]);
+    expect(events[1].text).toBe("學");
+    expect(rest).toBe("event: do");
+  });
+  it("handles CRLF and ignores malformed data", () => {
+    expect(parseSse('data: {"type":"done"}\r\n\r\ndata: {oops\n\n').events).toEqual([{ type: "done" }]);
+  });
+});
+
+describe("exam helpers", () => {
+  it("formats the countdown", () => {
+    expect(mmss(3000)).toBe("50:00");
+    expect(mmss(61.9)).toBe("01:01");
+    expect(mmss(-5)).toBe("00:00");
+  });
+  it("formats rates", () => {
+    expect(pct(0.456)).toBe("46%");
+    expect(pct(null)).toBe("-");
+  });
+});
+
+import { afterEach, vi } from "vitest";
+import { ApiError, streamChat } from "./api";
+
+describe("streamChat", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const sseBody = (frames: string[]) => new Response(new ReadableStream({
+    start(c) { for (const f of frames) c.enqueue(new TextEncoder().encode(f)); c.close(); },
+  }), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+
+  it("delivers tokens then done", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => sseBody(['data: {"type":"token","text":"가"}\n\n', 'data: {"type":"done","reply":"가나"}\n\n'])));
+    const seen: string[] = [];
+    expect(await streamChat("/x", {}, (e) => seen.push(e.type))).toBe("done");
+    expect(seen).toEqual(["token", "done"]);
+  });
+  it("reports a server error event as error (retry button)", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => sseBody(['data: {"type":"error","retry":true}\n\n'])));
+    expect(await streamChat("/x", {}, () => undefined)).toBe("error");
+  });
+  it("times out when the answer does not finish in time", async () => {
+    vi.stubGlobal("fetch", vi.fn((_u: string, init: RequestInit) => new Promise((_, rej) => {
+      init.signal!.addEventListener("abort", () => rej(new DOMException("aborted", "AbortError")));
+    })));
+    expect(await streamChat("/x", {}, () => undefined, 20)).toBe("timeout");
+  });
+  it("throws ApiError for HTTP errors before streaming", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ detail: { code: "chatbot_disabled_no_ai_consent" } }), { status: 403 })));
+    await expect(streamChat("/x", {}, () => undefined)).rejects.toBeInstanceOf(ApiError);
+  });
+});

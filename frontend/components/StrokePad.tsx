@@ -9,12 +9,16 @@ type Props = {
   disabled?: boolean;
   /** Reference medians (hanzi-writer data) drawn faintly as the tracing guide. */
   guide?: Pt[][];
-  /** A stroke to emphasise, e.g. the correct stroke revealed after 3 errors. */
+  /** The correct stroke, revealed after 3 errors on the same stroke (green). */
   highlight?: Pt[] | null;
+  /** The stroke just drawn wrongly: shown in red at once so the child redraws it. */
+  wrong?: Pt[] | null;
+  /** Strokes accepted so far (kept on the pad in ink). */
+  accepted?: Pt[][];
 };
 
 /** Square drawing pad; each finished stroke is reported in the backend's 0..1000 space. */
-export default function StrokePad({ onStroke, disabled, guide, highlight }: Props) {
+export default function StrokePad({ onStroke, disabled, guide, highlight, wrong, accepted }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
   const pts = useRef<{ x: number; y: number }[]>([]);
   const down = useRef(false);
@@ -36,8 +40,10 @@ export default function StrokePad({ onStroke, disabled, guide, highlight }: Prop
     if (!g) return;
     g.clearRect(0, 0, SIZE, SIZE);
     for (const s of guide ?? []) line(g, s, 28, "#e3e8e4");
-    if (highlight) line(g, highlight, 18, "#e0533d");
-  }, [guide, highlight]);
+    for (const s of accepted ?? []) line(g, s, 10, "#1d2b22");
+    if (highlight) line(g, highlight, 18, "#2e9e5b");
+    if (wrong) line(g, wrong, 12, "#e0533d");
+  }, [guide, highlight, wrong, accepted]);
 
   useEffect(() => { base(); }, [base]);
 
@@ -62,6 +68,9 @@ export default function StrokePad({ onStroke, disabled, guide, highlight }: Prop
       height={SIZE}
       className="pad"
       data-testid="stroke-pad"
+      data-wrong={wrong ? "1" : "0"}
+      data-answer={highlight ? "1" : "0"}
+      aria-label={wrong ? "틀린 획이 빨간색으로 표시됐어요" : "따라쓰기 칸"}
       onPointerDown={(e) => {
         if (disabled) return;
         ref.current!.setPointerCapture(e.pointerId);
