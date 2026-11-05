@@ -1,0 +1,90 @@
+{
+  "measured_at": "2026-11-05T08:02:44.615807+00:00",
+  "environment": "local uvicorn (live_smoke)",
+  "llm": {
+    "chat": "BedrockProvider",
+    "chat_model": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "question_generation_model": "global.anthropic.claude-sonnet-4-6"
+  },
+  "real_bedrock": true,
+  "sample_size": 10,
+  "with_first_token": 10,
+  "first_token_p50_s": 1.473,
+  "first_token_p95_s": 2.076,
+  "first_token_max_s": 2.076,
+  "slo_s": 3.0,
+  "errors": 0,
+  "pass": true,
+  "samples": [
+    {
+      "question": "學이 무슨 뜻이에요?",
+      "first_token_s": 1.675,
+      "total_s": 2.16,
+      "status": "answered",
+      "events": 5
+    },
+    {
+      "question": "校는 무슨 뜻이에요?",
+      "first_token_s": 1.473,
+      "total_s": 2.036,
+      "status": "answered",
+      "events": 6
+    },
+    {
+      "question": "山은 어떤 한자예요?",
+      "first_token_s": 2.076,
+      "total_s": 2.799,
+      "status": "answered",
+      "events": 5
+    },
+    {
+      "question": "水가 들어간 낱말 알려 주세요.",
+      "first_token_s": 1.386,
+      "total_s": 2.372,
+      "status": "answered",
+      "events": 7
+    },
+    {
+      "question": "火는 무슨 뜻이에요?",
+      "first_token_s": 1.521,
+      "total_s": 2.093,
+      "status": "answered",
+      "events": 5
+    },
+    {
+      "question": "木으로 만든 낱말이 뭐가 있어요?",
+      "first_token_s": 1.404,
+      "total_s": 2.24,
+      "status": "answered",
+      "events": 3
+    },
+    {
+      "question": "金은 무슨 뜻이에요?",
+      "first_token_s": 1.316,
+      "total_s": 2.125,
+      "status": "answered",
+      "events": 5
+    },
+    {
+      "question": "土는 어떻게 읽어요?",
+      "first_token_s": 1.271,
+      "total_s": 1.965,
+      "status": "answered",
+      "events": 4
+    },
+    {
+      "question": "日과 月은 뭐가 달라요?",
+      "first_token_s": 1.51,
+      "total_s": 2.108,
+      "status": "answered",
+      "events": 5
+    },
+    {
+      "question": "人이 들어간 낱말 알려 줘요.",
+      "first_token_s": 1.392,
+      "total_s": 2.26,
+      "status": "answered",
+      "events": 7
+    }
+  ]
+}
