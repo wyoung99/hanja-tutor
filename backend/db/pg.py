@@ -33,6 +33,54 @@ def start_embedded_postgres(data_dir: Path, cleanup: Optional[str] = "stop") -> 
     return srv.get_uri()
 
 
+def start_embedded_postgres_server(data_dir: Path):
+    """Tests: a throw-away server (cleanup_mode="delete"); returns the pgserver handle."""
+    data_dir = Path(data_dir).resolve()
+    try:
+        import pixeltable_pgserver as pgs
+    except ImportError as e:  # pragma: no cover
+        raise EmbeddedPostgresUnavailable(f"pixeltable-pgserver not installed ({e})") from e
+    data_dir.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        return pgs.get_server(data_dir, cleanup_mode="delete")
+    except Exception as e:  # noqa: BLE001
+        raise EmbeddedPostgresUnavailable(f"{type(e).__name__}: {e}") from e
+
+
+def postgres_processes(data_dir: Path) -> list:
+    """Running postgres processes whose command line names data_dir (leftover check)."""
+    import psutil
+
+    from pixeltable_pgserver.utils import POSTGRES_PROCESS_NAMES, cmdline_names_data_dir
+
+    out = []
+    for proc in psutil.process_iter(attrs=("name", "cmdline")):
+        try:
+            if ((proc.info["name"] or "").lower() in POSTGRES_PROCESS_NAMES and proc.info["cmdline"]
+                    and cmdline_names_data_dir(proc.info["cmdline"], Path(data_dir))):
+                out.append(proc)
+        except Exception:  # noqa: BLE001 - process vanished / access denied
+            continue
+    return out
+
+
+def shutdown_embedded_postgres(srv) -> None:
+    """Stop the server, delete its data dir and make sure no postgres process is left on it."""
+    import shutil
+
+    data_dir = Path(srv.pgdata)
+    try:
+        srv.cleanup()
+    except Exception:  # noqa: BLE001
+        pass
+    for proc in postgres_processes(data_dir):
+        try:
+            proc.kill()
+        except Exception:  # noqa: BLE001
+            pass
+    shutil.rmtree(data_dir, ignore_errors=True)
+
+
 def database_url(env: Mapping[str, str]) -> Optional[str]:
     """DATABASE_URL, else an embedded server when PG_EMBEDDED_DIR is set, else None (in-memory)."""
     if env.get("DATABASE_URL"):

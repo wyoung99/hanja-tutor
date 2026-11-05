@@ -12,8 +12,13 @@ Configuration (``backend/.env`` + process env, see ``app/settings.py`` and ``.en
 * ``LLM_CONFIG`` JSON -> ``llm.build_llm_router`` (Bedrock Haiku/Sonnet by tier); empty -> fake LLM.
   Bedrock credentials come only from the default boto3 chain; region from LLM_CONFIG or AWS_REGION.
 * ``OPENDICT_API_KEY`` -> 우리말샘 fallback dictionary; empty -> unknown hanja answer "잘 모르겠어요".
-* ``DATABASE_URL`` or ``PG_EMBEDDED_DIR`` -> LangGraph PostgresSaver checkpoints + ``chat_threads`` table;
-  neither -> in-memory conversation store.
+* ``DATABASE_URL`` or ``PG_EMBEDDED_DIR`` -> PostgreSQL is the system of record: LangGraph PostgresSaver
+  checkpoints + ``chat_threads``, atomic ``usage_counters``, and one table per entity for accounts, profiles,
+  consents, plans/review items, tracing, mock exams, screen time, safety events, billing, refunds, payment
+  archive, notifications and push subscriptions (``db.state`` / ``app.persistence``; flushed before every
+  response). Neither -> everything in memory (unit tests).
+* ``VAPID_PUBLIC_KEY`` / ``VAPID_PRIVATE_KEY`` / ``VAPID_SUBJECT`` -> real Web Push to parents' browsers
+  (``notifications``); missing -> in-app inbox + email fallback only.
 * ``STROKE_TOL_*`` -> stroke grading tolerances (library defaults otherwise).
 Non-production (``HANJA_ENV != "production"``) adds a fake identity verifier (``POST /api/dev/verify``) and a
 clock shift endpoint (``POST /api/dev/clock``) for timer tests; Toss is faked unless ``TOSS_SECRET_KEY`` is set.
@@ -22,6 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 import sys
 import threading
 from contextlib import asynccontextmanager
@@ -42,11 +48,14 @@ from billing import BillingConfig, BillingService, FakeTossGateway, RecordingEma
 from billing.api import create_router as billing_router  # noqa: E402
 from chatbot.dictionary import UrimalsaemClient  # noqa: E402
 from chatbot.knowledge import HanjaKnowledge  # noqa: E402
-from chatbot.service import ChatbotService, RecordingNotifier  # noqa: E402
+from chatbot.service import ChatbotService  # noqa: E402
 from chatbot.streaming import sse  # noqa: E402
 from conversations import (ConversationService, InMemoryCheckpointer, InMemoryThreadMeta,  # noqa: E402
                            PostgresCheckpointer, PostgresThreadMeta)
 from db.pg import database_url  # noqa: E402
+from db.state import PostgresStateBackend, StateSync  # noqa: E402
+from app.persistence import PlanState, apply_plan_state, rebuild_indexes, register_all  # noqa: E402
+from notifications import InvalidSubscription, NotificationCenter, VapidConfig, WebPushSender  # noqa: E402
 from hanja_db.store import HanjaStore, nfc  # noqa: E402
 from lifecycle import LifecycleService, PaymentRecord, PaymentStore  # noqa: E402
 from llm import FakeProvider, LLMRouter, build_llm_router  # noqa: E402
@@ -60,7 +69,8 @@ from screentime.service import ScreenTimeError, ScreenTimeService  # noqa: E402
 from study.planner import PlanError, PlanHanja, StudyPlanner, kst_today  # noqa: E402
 from tracing.grader import GradeTolerance, TracingProgress, start_attempt  # noqa: E402
 from tracing.strokes import StrokeData, is_gradable, load_db as load_stroke_db  # noqa: E402
-from usage import CHATBOT, MOCKEXAM, LimitReached, UsageLimitConfig, UsageService  # noqa: E402
+from usage import (CHATBOT, MOCKEXAM, LimitReached, PostgresCounterStore, UsageLimitConfig,  # noqa: E402
+                   UsageService)
 
 log = logging.getLogger("hanja.app")
 KST = timezone(timedelta(hours=9))
@@ -166,6 +176,20 @@ class ResolveIn(BaseModel):
     minutes: Optional[int] = None
 
 
+class PushKeysIn(BaseModel):
+    p256dh: str
+    auth: str
+
+
+class PushSubscriptionIn(BaseModel):
+    endpoint: str
+    keys: PushKeysIn
+
+
+class PushEndpointIn(BaseModel):
+    endpoint: str
+
+
 class ClockIn(BaseModel):
     advance_minutes: float = 0
     reset: bool = False
@@ -181,8 +205,35 @@ def _build_llm(env: Dict[str, str]) -> LLMRouter:
     return LLMRouter({"fast": fake, "reasoning": fake})
 
 
+class PersistMiddleware:
+    """Pure ASGI: persist the state change of a request BEFORE its response starts (an acknowledged request
+    is durable), and once more after streamed bodies / background work finished."""
+
+    def __init__(self, app, flush: Callable[[], int]) -> None:
+        self.app, self.flush = app, flush
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        import anyio
+
+        async def send_wrapper(msg):
+            if msg["type"] == "http.response.start":
+                await anyio.to_thread.run_sync(self.flush)
+            await send(msg)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        finally:
+            try:
+                await anyio.to_thread.run_sync(self.flush)
+            except Exception:  # noqa: BLE001
+                log.exception("state flush after response failed")
+
+
 def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dict] = None,
-               scheduler: bool = False) -> FastAPI:
+               scheduler: bool = False, push_sender=None) -> FastAPI:
+    """push_sender: tests inject a fake Web Push sender; otherwise VAPID keys in env enable WebPushSender."""
     env = load_runtime_env() if env is None else clean(env)
     clock = clock or Clock()
     production = env.get("HANJA_ENV") == "production"
@@ -202,7 +253,28 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
     # ---- services -----------------------------------------------------------
     ver = FakeIdentityVerifier()
     acc = AccountService(ver, clock)
-    push, mail = RecordingNotifier(), RecordingEmail()
+    mail = RecordingEmail()
+    db_url = database_url(env)
+    sync = StateSync(PostgresStateBackend(db_url) if db_url else None)
+
+    # parent notifications: inbox + Web Push (VAPID) + email fallback
+    vapid = VapidConfig.from_env(env)
+    if push_sender is None and vapid is not None:
+        push_sender = WebPushSender(vapid)
+    push_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="webpush") if isinstance(
+        push_sender, WebPushSender) else None
+
+    def email_of(pid: str) -> Optional[str]:
+        p = acc.parents.get(pid) or acc.dormant_parents.get(pid)
+        return p.email if p else None
+
+    def nickname_of(cid: str) -> Optional[str]:
+        c = acc.children.get(cid)
+        return c.nickname if c else None
+
+    push = NotificationCenter(push_sender, email=mail, email_of=email_of, nickname_of=nickname_of, clock=clock,
+                              executor=push_pool, allow_local_endpoints=not production,
+                              after_deliver=sync.flush)
 
     class Late:
         b = None
@@ -213,7 +285,7 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
     late = Late()
     usage = UsageService(UsageLimitConfig.from_env(env), clock, late,
                          parent_of=lambda cid: (acc.children[cid].parent_id, acc.children[cid].nickname),
-                         notifier=push)
+                         notifier=push, counters=PostgresCounterStore(db_url) if db_url else None)
     gw = TossHttpGateway(env["TOSS_SECRET_KEY"]) if env.get("TOSS_SECRET_KEY") else FakeTossGateway()
     bill = BillingService(gw, BillingConfig.from_env(env), clock,
                           parent_info=lambda pid: (acc.parents[pid].email, [c.id for c in acc.children_of(pid)]),
@@ -226,13 +298,13 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
                          use_llm_classifier=bool(env.get("LLM_CONFIG")), usage=usage,
                          classifier_llm=llm_router.for_task("safety_classifier"))
 
-    db_url = database_url(env)
     if db_url:  # LangGraph PostgresSaver + chat_threads metadata table
         conv = ConversationService(bot, acc, PostgresCheckpointer.from_conn_string(db_url), PostgresThreadMeta(db_url))
     else:
         conv = ConversationService(bot, acc, InMemoryCheckpointer(), InMemoryThreadMeta())
 
     planners: Dict[str, StudyPlanner] = {}
+    plan_states: Dict[str, PlanState] = {}  # saved planner state not rebuilt yet (restart)
     tracings: Dict[str, TracingProgress] = {}
     attempts: Dict[str, object] = {}
     pool = lambda b, g: cumulative_pool(b, g, bodies[b], assign, hanja.get(b, {}))  # noqa: E731
@@ -271,6 +343,9 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
                              review_chars=cumulative_chars(*t) if t else ())
             if extra.get("daily_count") is not None:
                 p.set_daily_override(int(extra["daily_count"]))
+            saved = plan_states.pop(cid, None)
+            if saved is not None:
+                apply_plan_state(p, saved)
             planners[cid] = p
         return planners[cid]
 
@@ -295,8 +370,9 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
     def tracing_of(cid: str) -> TracingProgress:
         return tracings.setdefault(cid, TracingProgress())
 
+    # weekly summary: always handed to the notification center, which pushes or falls back to email
     reports = ReportService(acc, bill, st, planner_of, tracing_of, exam, conv, usage, push, mail,
-                            clock=clock, reading_for=reading_for)
+                            can_push=lambda pid: True, clock=clock, reading_for=reading_for)
 
     # ---- lifecycle (deletion / dormancy) --------------------------------------------
     life = LifecycleService(acc, conv, push, payments=BillingPaymentStore(bill), clock=clock)
@@ -304,6 +380,7 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
     def purge_learning(cid: str) -> None:
         """Every learning record of a deleted child (conversations/safety events are purged by lifecycle)."""
         planners.pop(cid, None)
+        plan_states.pop(cid, None)
         tracings.pop(cid, None)
         for k in [k for k in attempts if k.startswith(cid + ":")]:
             del attempts[k]
@@ -318,19 +395,36 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
             del st._days[k]
         for rid in [r.id for r in st.requests.values() if r.child_id == cid]:
             del st.requests[rid]
-        with usage._lock:
-            for k in [k for k in usage._counts if k[0] == cid]:
-                del usage._counts[k]
+        usage.purge_child(cid)
+        push.purge_child(cid)
 
     life.child_purge_hooks.append(purge_learning)
 
-    def learning_records(cid: str) -> int:
-        """Remaining learning rows for a child (deletion check)."""
-        n = int(cid in planners) + int(cid in tracings) + sum(k.startswith(cid + ":") for k in attempts)
+    # ---- persistence (PostgreSQL when configured) ----------------------------------------
+    register_all(sync, acc=acc, planners=planners, plan_states=plan_states, tracings=tracings, attempts=attempts,
+                 sdb=sdb, tol=tol, exam=exam, formats=formats, reports=reports, st=st, bot=bot, conv=conv,
+                 usage=usage, bill=bill, refunds=refunds, life=life, center=push)
+    restored = sync.load()
+    rebuild_indexes(acc)
+    if sync.persistent:
+        log.info("state restored from PostgreSQL: %d rows", sum(restored.values()))
+
+    def persist() -> int:
+        return sync.flush()
+
+    def learning_records(cid: str, thread_ids: Optional[List[str]] = None) -> int:
+        """Remaining learning rows for a child (deletion check): memory + every PostgreSQL table, including
+        the LangGraph checkpoints of the child's former threads."""
+        n = int(cid in planners) + int(cid in plan_states) + int(cid in tracings)
+        n += sum(k.startswith(cid + ":") for k in attempts)
         n += sum(e.profile_id == cid for e in exam.exams.values())
         n += sum(k[0] == cid for k in reports._assigned) + sum(k[0] == cid for k in reports._done)
         n += len(reports._reviews.get(cid, [])) + sum(k[0] == cid for k in st._days)
         n += len(conv.meta.for_child(cid)) + sum(e.child_id == cid for e in bot.events)
+        n += usage.counters.rows_for_child(cid) + sum(e.child_id == cid for e in usage.paid_events)
+        if sync.persistent:
+            n += sum(sync.rows_for_child(cid).values())
+        n += conv.checkpointer.rows_for_threads(thread_ids or [])
         return n
 
     # ---- auth helpers ----------------------------------------------------------------
@@ -402,6 +496,27 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
                "billing": bill.run_due()}
         return out
 
+    closed = threading.Event()
+
+    def close() -> None:
+        """Release DB connections / worker threads (tests create many apps). Idempotent."""
+        if closed.is_set():
+            return
+        closed.set()
+        try:
+            push.wait_idle()
+            persist()
+        finally:
+            if push_pool:
+                push_pool.shutdown(wait=True)
+            for res in (sync, usage.counters, conv.checkpointer, conv.meta):
+                fn = getattr(res, "close", None)
+                if fn:
+                    try:
+                        fn()
+                    except Exception:  # noqa: BLE001
+                        log.warning("close failed for %s", type(res).__name__)
+
     @asynccontextmanager
     async def lifespan(_app):
         stop = threading.Event()
@@ -410,13 +525,17 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
                 while not stop.wait(SCHEDULER_INTERVAL_SECONDS):
                     try:
                         run_jobs()
+                        persist()
                     except Exception:  # noqa: BLE001
                         log.exception("scheduled jobs failed")
             threading.Thread(target=loop, daemon=True, name="hanja-jobs").start()
         yield
         stop.set()
+        close()
 
     app = FastAPI(title="hanja-tutor", lifespan=lifespan)
+    if sync.persistent:
+        app.add_middleware(PersistMiddleware, flush=persist)
     api = APIRouter(prefix="/api")
     api.include_router(accounts_router(acc, login=life.login_parent))
     api.include_router(billing_router(bill, parent_of_session))
@@ -429,7 +548,9 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
                                     "chat_model": getattr(fast, "model_id", None),
                                     "question_generation_model": getattr(llm_router.for_task("question_generation"), "model_id", None)},
                 "dictionary": "urimalsaem" if dictionary else None,
-                "conversation_store": "postgres" if db_url else "memory"}
+                "conversation_store": "postgres" if db_url else "memory",
+                "state_store": "postgres" if sync.persistent else "memory",
+                "web_push": push.push_enabled}
 
     if not production:
         @api.post("/dev/verify")
@@ -456,6 +577,7 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
             raise HTTPException(422, {"code": "unsupported_grade"})
         c.extra["target"] = (body.body, body.grade)
         planners.pop(child_id, None)
+        plan_states.pop(child_id, None)
         return {"body": body.body, "grade": body.grade, "exam": exam_info(body.body, body.grade)}
 
     def plan_json(cid: str) -> dict:
@@ -803,29 +925,74 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
     def notifications(authorization: Optional[str] = Header(None)):
         """Parent push inbox (the PWA polls it and shows system notifications)."""
         pid = pid_from(authorization)
-        return [{"seq": i, "kind": k, "payload": p} for i, (who, k, p) in enumerate(push.sent) if who == pid]
+        return [{"seq": i.seq, "id": i.id, "kind": i.kind, "payload": i.payload, "at": i.created_at.isoformat(),
+                 "push": i.push, "email": i.email} for i in push.inbox_for(pid)]
+
+    # ---- Web Push (VAPID) subscriptions: parent accounts only ----------------------------
+    @api.get("/push/config")
+    def push_config():
+        return {"enabled": push.push_enabled, "public_key": vapid.public_key if vapid else None}
+
+    @api.get("/parents/me/push-subscriptions")
+    def push_subs(authorization: Optional[str] = Header(None)):
+        pid = pid_from(authorization)
+        return [{"endpoint_origin": "/".join(s.endpoint.split("/")[:3]), "created_at": s.created_at.isoformat(),
+                 "last_status": s.last_status} for s in push.subscriptions_of(pid)]
+
+    @api.post("/parents/me/push-subscriptions", status_code=201)
+    def push_subscribe(body: PushSubscriptionIn, authorization: Optional[str] = Header(None)):
+        pid = pid_from(authorization)
+        if not push.push_enabled:
+            raise HTTPException(409, {"code": "push_not_configured"})
+        try:
+            push.subscribe(pid, body.endpoint, body.keys.p256dh, body.keys.auth)
+        except InvalidSubscription as e:
+            raise HTTPException(422, {"code": e.code, "message": str(e)})
+        return {"ok": True, "subscriptions": len(push.subscriptions_of(pid))}
+
+    @api.delete("/parents/me/push-subscriptions")
+    def push_unsubscribe(body: PushEndpointIn, authorization: Optional[str] = Header(None)):
+        pid = pid_from(authorization)
+        return {"ok": push.unsubscribe(pid, body.endpoint)}
+
+    @api.post("/parents/me/push-test")
+    def push_test(authorization: Optional[str] = Header(None)):
+        pid = pid_from(authorization)
+        item = push.notify(pid, "push_test", {"message": "이 기기에서 한자 튜터 알림을 받을 수 있어요."})
+        push.wait_idle()
+        return {"push": item.push, "email": item.email}
 
     # ---- deletion / dormancy ------------------------------------------------------------
     @api.delete("/children/{child_id}")
     def delete_child(child_id: str, authorization: Optional[str] = Header(None)):
         pid, _ = parent_child(authorization, child_id)
+        tids = [m.thread_id for m in conv.meta.for_child(child_id)]
         guard(lambda: life.delete_child(pid, child_id))
-        return {"ok": True, "remaining_learning_records": learning_records(child_id)}
+        persist()
+        sync.backend.delete_child_rows(child_id)
+        return {"ok": True, "remaining_learning_records": learning_records(child_id, tids)}
 
     @api.delete("/parents/me")
     def delete_account(authorization: Optional[str] = Header(None)):
         pid = pid_from(authorization)
         kids = [c.id for c in acc.children_of(pid)]
+        tids = {k: [m.thread_id for m in conv.meta.for_child(k)] for k in kids}
         bill.subs.pop(pid, None)  # no further renewals for a deleted account
         guard(lambda: life.delete_account(pid))
-        return {"ok": True, "remaining_learning_records": sum(learning_records(k) for k in kids),
+        push.purge_parent(pid)
+        persist()  # one transaction: learning rows deleted, payments -> payment_archive
+        for k in kids:
+            sync.backend.delete_child_rows(k)
+        return {"ok": True, "remaining_learning_records": sum(learning_records(k, tids[k]) for k in kids),
                 "archived_payments": sum(1 for r in life.archive.rows if r.record.parent_id == pid)}
 
     # ---- operator jobs (cron / scheduler) -------------------------------------------------
     @api.post("/admin/jobs/run")
     def admin_jobs(x_admin_token: Optional[str] = Header(None)):
         admin(x_admin_token)
-        return run_jobs()
+        out = run_jobs()
+        push.wait_idle()
+        return out
 
     @api.post("/admin/jobs/weekly-summary")
     def admin_weekly(x_admin_token: Optional[str] = Header(None)):
@@ -841,7 +1008,9 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
     app.state.services = dict(acc=acc, usage=usage, bill=bill, refunds=refunds, exam=exam, gateway=gw,
                               llm_router=llm_router, store=store, strokes=sdb, bot=bot, reports=reports,
                               conv=conv, life=life, screentime=st, planners=planners, push=push,
-                              learning_records=learning_records, clock=clock, dictionary=dictionary, tol=tol)
+                              learning_records=learning_records, clock=clock, dictionary=dictionary, tol=tol,
+                              sync=sync, persist=persist, mail=mail)
+    app.state.close = close
     return app
 
 

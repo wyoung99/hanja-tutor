@@ -88,6 +88,11 @@ class FakeIdentityVerifier:
         return self._done.get(verification_token)
 
 
+def session_key(session: str) -> str:
+    """Sessions are stored by hash only (a leaked table row is not a usable bearer token)."""
+    return hashlib.sha256((session or "").encode()).hexdigest()
+
+
 def hash_pin(pin: str, salt: bytes) -> str:
     return hashlib.scrypt(pin.encode(), salt=salt, n=2**12, r=8, p=1).hex()
 
@@ -130,7 +135,7 @@ class AccountService:
         self.parents: Dict[str, ParentAccount] = {}
         self.children: Dict[str, ChildProfile] = {}
         self._ci_index: Dict[str, str] = {}
-        self._sessions: Dict[str, str] = {}
+        self._sessions: Dict[str, str] = {}  # sha256(session token) -> parent id
         self._used_tokens: set = set()
         # dormant accounts are moved out of the active stores (separate storage)
         self.dormant_parents: Dict[str, ParentAccount] = {}
@@ -187,12 +192,12 @@ class AccountService:
         self.parents[pid].last_active_at = self.clock()
         self.parents[pid].dormancy_notice_at = None
         session = secrets.token_urlsafe(24)
-        self._sessions[session] = pid
+        self._sessions[session_key(session)] = pid
         return session
 
     def parent_for_session(self, session: str) -> ParentAccount:
-        pid = self._sessions.get(session)
-        if pid is None:
+        pid = self._sessions.get(session_key(session))
+        if pid is None or pid not in self.parents:
             raise Forbidden("login required")
         return self.parents[pid]
 

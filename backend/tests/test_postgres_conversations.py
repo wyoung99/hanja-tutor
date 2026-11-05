@@ -120,9 +120,9 @@ def test_profile_and_account_deletion_purge_postgres(pg_uri):
     assert rows(conv, t2) == {x: 0 for x in CP_TABLES + ("chat_threads",)}
 
 
-def test_composed_app_on_postgres_resume_and_delete(pg_uri):
+def test_composed_app_on_postgres_resume_and_delete(pg_db):
     clock = Clock(datetime(2026, 11, 5, 10, 0, tzinfo=KST))
-    app = create_app(clock=clock, env={"DATABASE_URL": pg_uri})
+    app = create_app(clock=clock, env={"DATABASE_URL": pg_db})
     c = TestClient(app)
     assert c.get("/api/health").json()["conversation_store"] == "postgres"
     tok = c.post("/api/dev/verify", json={"ci": "pg"}).json()["verification_token"]
@@ -139,3 +139,4 @@ def test_composed_app_on_postgres_resume_and_delete(pg_uri):
     r = c.delete(f"/api/children/{cid}", headers=H)
     assert r.json()["remaining_learning_records"] == 0
     assert rows(conv, tid) == {x: 0 for x in CP_TABLES + ("chat_threads",)}
+    app.state.close()

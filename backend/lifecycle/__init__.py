@@ -126,7 +126,7 @@ class LifecycleService:
         """Login via identity verification; restores a dormant account's data."""
         before = set(self.accounts.dormant_parents)
         session = self.accounts.login_parent(verification_token)
-        pid = self.accounts._sessions[session]
+        pid = self.accounts.parent_for_session(session).id
         if pid in before:
             self._restore_vault(pid)
         return session

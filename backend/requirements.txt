@@ -16,3 +16,7 @@ pixeltable-pgserver==0.7.2
 fasteners==0.20
 psutil==7.2.2
 python-dotenv==1.2.4
+# Web Push (VAPID, aes128gcm) for parent notifications.
+pywebpush==2.5.0
+py-vapid==1.9.6
+http-ece==1.2.1

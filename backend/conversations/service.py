@@ -45,6 +45,9 @@ class InMemoryCheckpointer:
     def thread_ids(self) -> List[str]:
         return list(self._data)
 
+    def rows_for_threads(self, thread_ids: List[str]) -> int:
+        return sum(1 for t in thread_ids if t in self._data)
+
 
 class PostgresCheckpointer:
     """Stores the message list as a LangGraph checkpoint via PostgresSaver (thread_id config)."""
@@ -91,6 +94,23 @@ class PostgresCheckpointer:
 
     def thread_ids(self) -> List[str]:
         return sorted({t.config["configurable"]["thread_id"] for t in self.saver.list(None)})
+
+    def rows_for_threads(self, thread_ids: List[str]) -> int:
+        """Rows left in checkpoints / checkpoint_blobs / checkpoint_writes for these threads (AC3/AC10)."""
+        if not thread_ids:
+            return 0
+        n = 0
+        with self.saver._cursor() as cur:
+            for t in ("checkpoints", "checkpoint_blobs", "checkpoint_writes"):
+                cur.execute(f"SELECT count(*) AS n FROM {t} WHERE thread_id = ANY(%s)", (list(thread_ids),))
+                n += cur.fetchone()["n"]
+        return n
+
+    def close(self) -> None:
+        ctx = getattr(self, "_ctx", None)
+        if ctx is not None:
+            self._ctx = None
+            ctx.__exit__(None, None, None)
 
 
 # ---- metadata store -----------------------------------------------------------------
@@ -179,6 +199,9 @@ class PostgresThreadMeta:
 
     def all(self) -> List[ThreadMeta]:
         return self._q("SELECT thread_id, child_id, title, created_at, last_message_at FROM chat_threads")
+
+    def close(self) -> None:
+        self.conn.close()
 
     def count_rows(self, thread_id: str) -> int:
         return self.conn.execute("SELECT count(*) FROM chat_threads WHERE thread_id = %s", (thread_id,)).fetchone()[0]
