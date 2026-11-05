@@ -249,7 +249,7 @@ def test_urimalsaem_client_wired_from_env(monkeypatch):
     cid = kid(c, H)
     r = c.post(f"/api/children/{cid}/chat", json={"message": "龘이 뭐예요?"}).json()  # not in the DB
     assert r["status"] == "answered" and "우리말샘" in r["reply"] and "풀이" in r["reply"]
-    assert seen and "key=test-key" in seen[0]
+    assert seen and "key=test-key" in seen[0] and "num=10" in seen[0]  # the API rejects num < 10
 
 
 def test_without_dictionary_key_unknown_hanja_is_dont_know():

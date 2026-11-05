@@ -25,7 +25,7 @@ class UrimalsaemClient:
             return r.read().decode("utf-8")
 
     def lookup(self, term: str) -> Optional[str]:
-        qs = urllib.parse.urlencode({"key": self.api_key, "q": term, "req_type": "json", "num": 1})
+        qs = urllib.parse.urlencode({"key": self.api_key, "q": term, "req_type": "json", "num": 10})  # API rejects num < 10
         try:
             data = json.loads(self._get(f"{URIMALSAEM_URL}?{qs}"))
         except Exception:  # noqa: BLE001 - network/parse failure == not found
