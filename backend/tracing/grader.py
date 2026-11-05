@@ -31,6 +31,22 @@ class GradeTolerance:
     length_max_ratio: float = 2.0
     direction_max_angle_deg: float = 60.0  # start->end vector vs reference
 
+    @classmethod
+    def from_env(cls, env: Mapping[str, str]) -> "GradeTolerance":
+        """Settings override (no code change): STROKE_TOL_POSITION, STROKE_TOL_LENGTH_MIN,
+        STROKE_TOL_LENGTH_MAX, STROKE_TOL_DIRECTION_DEG. Unset keys keep the library defaults."""
+        d = cls()
+        keys = {"position": "STROKE_TOL_POSITION", "length_min_ratio": "STROKE_TOL_LENGTH_MIN",
+                "length_max_ratio": "STROKE_TOL_LENGTH_MAX", "direction_max_angle_deg": "STROKE_TOL_DIRECTION_DEG"}
+        vals = {f: float(env[k]) for f, k in keys.items() if env.get(k)}
+        t = cls(**{**d.__dict__, **vals})
+        if not (t.position > 0 and 0 < t.length_min_ratio <= 1 <= t.length_max_ratio and 0 < t.direction_max_angle_deg <= 180):
+            raise ValueError("invalid stroke tolerance settings")
+        return t
+
+    def as_dict(self) -> dict:
+        return dict(self.__dict__)
+
 
 def _length(pts: Sequence[Point]) -> float:
     return sum(math.dist(a, b) for a, b in zip(pts, pts[1:]))

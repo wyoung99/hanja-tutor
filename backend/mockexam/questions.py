@@ -81,6 +81,21 @@ def build_question(qid: str, qtype: str, points: int, h: Hanja, pool: Sequence[H
     return Question(qid, qtype, points, _prompt(qtype, h), h.char, tuple(options), correct, explanation_for(h))
 
 
+_READING_HANJA_CACHE: Dict[int, Tuple[object, frozenset]] = {}
+
+
+def _reading_hanja(db: Dict[str, Hanja]) -> frozenset:
+    """Hanja that occur inside DB 훈·음 strings (source annotations such as 方 = '모[棱] 방').
+
+    They are DB-grounded text, so a question quoting that reading is not inventing a hanja."""
+    hit = _READING_HANJA_CACHE.get(id(db))
+    if hit is not None and hit[0] is db:
+        return hit[1]
+    out = frozenset(ch for h in db.values() for ch in HANJA_RE.findall(h.hun + h.eum))
+    _READING_HANJA_CACHE[id(db)] = (db, out)
+    return out
+
+
 def verify_question(q: Question, db: Dict[str, Hanja]) -> List[str]:
     """Independent DB cross-check. Returns problems ([] => OK to ask)."""
     probs: List[str] = []
@@ -88,7 +103,7 @@ def verify_question(q: Question, db: Dict[str, Hanja]) -> List[str]:
     if h is None:
         return [f"{q.id}: char {q.char!r} not in DB"]
     for ch in set(HANJA_RE.findall(q.prompt + "".join(q.options) + q.explanation + q.answer)):
-        if ch not in db:
+        if ch not in db and ch not in _reading_hanja(db):  # e.g. 方 '모[棱]': hanja inside a DB 훈 itself
             probs.append(f"{q.id}: hanja {ch!r} not in DB")
     if h.hun_eum not in q.explanation:
         probs.append(f"{q.id}: explanation lacks DB 훈음 {h.hun_eum!r}")

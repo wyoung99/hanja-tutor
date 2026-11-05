@@ -1,38 +1,54 @@
-"""Composed FastAPI application (staging / E2E target).
+"""Composed FastAPI application (local test environment / E2E target).
 
-Wires the independently-tested services (accounts, usage, chatbot, mock exam, tracing, study plan,
-reports, billing, refunds) behind one HTTP API under ``/api``.
+Wires the independently-tested services (accounts, lifecycle, usage, chatbot + conversations, mock exam,
+tracing, study plan, screen time, reports, billing, refunds) behind one HTTP API under ``/api``.
 
 Hanja data is always the real DB: per-body 훈·음 from ``data/hanja_db/hanja_by_body.csv`` and assignments
 from ``assignments.csv`` (NFC lookups), stroke medians from ``data/stroke_data/strokes.json`` (hanzi-writer).
 Every 훈·음 shown, asked or graded is the value of the child's selected exam body. Grades without a known
 official exam format (대한검정회 준5·준4·준3) get learning features only; mock-exam start is blocked.
 
-Staging mode (default, ``HANJA_ENV != "production"``) uses a fake identity verifier
-(``POST /api/dev/verify``), a fake Toss gateway (unless ``TOSS_SECRET_KEY`` is set) and a fake LLM
-(unless ``LLM_CONFIG`` JSON is provided -> ``llm.build_provider``). Time is injectable for KST-boundary tests.
+Configuration (``backend/.env`` + process env, see ``app/settings.py`` and ``.env.example``):
+* ``LLM_CONFIG`` JSON -> ``llm.build_llm_router`` (Bedrock Haiku/Sonnet by tier); empty -> fake LLM.
+  Bedrock credentials come only from the default boto3 chain; region from LLM_CONFIG or AWS_REGION.
+* ``OPENDICT_API_KEY`` -> 우리말샘 fallback dictionary; empty -> unknown hanja answer "잘 모르겠어요".
+* ``DATABASE_URL`` or ``PG_EMBEDDED_DIR`` -> LangGraph PostgresSaver checkpoints + ``chat_threads`` table;
+  neither -> in-memory conversation store.
+* ``STROKE_TOL_*`` -> stroke grading tolerances (library defaults otherwise).
+Non-production (``HANJA_ENV != "production"``) adds a fake identity verifier (``POST /api/dev/verify``) and a
+clock shift endpoint (``POST /api/dev/clock``) for timer tests; Toss is faked unless ``TOSS_SECRET_KEY`` is set.
 """
 from __future__ import annotations
 
 import json
-import os
+import logging
 import sys
-from datetime import datetime, timedelta, timezone
+import threading
+from contextlib import asynccontextmanager
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, List, Optional
 
 from fastapi import APIRouter, FastAPI, Header, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from accounts.api import create_router as accounts_router  # noqa: E402
 from accounts.service import AccountError, AccountService, FakeIdentityVerifier  # noqa: E402
+from app.settings import aws_region, clean, load_runtime_env  # noqa: E402
 from billing import BillingConfig, BillingService, FakeTossGateway, RecordingEmail, TossHttpGateway  # noqa: E402
 from billing.api import create_router as billing_router  # noqa: E402
+from chatbot.dictionary import UrimalsaemClient  # noqa: E402
 from chatbot.knowledge import HanjaKnowledge  # noqa: E402
 from chatbot.service import ChatbotService, RecordingNotifier  # noqa: E402
+from chatbot.streaming import sse  # noqa: E402
+from conversations import (ConversationService, InMemoryCheckpointer, InMemoryThreadMeta,  # noqa: E402
+                           PostgresCheckpointer, PostgresThreadMeta)
+from db.pg import database_url  # noqa: E402
 from hanja_db.store import HanjaStore, nfc  # noqa: E402
+from lifecycle import LifecycleService, PaymentRecord, PaymentStore  # noqa: E402
 from llm import FakeProvider, LLMRouter, build_llm_router  # noqa: E402
 from mockexam import formats as F  # noqa: E402
 from mockexam import questions as Q  # noqa: E402
@@ -40,14 +56,16 @@ from mockexam.service import ExamError, FormatPending, MockExamService, cumulati
 from refunds import RefundService  # noqa: E402
 from refunds.api import create_router as refunds_router  # noqa: E402
 from reports.service import ReportService, SubscriptionRequired  # noqa: E402
-from screentime.service import ScreenTimeService  # noqa: E402
-from study.planner import PlanHanja, StudyPlanner  # noqa: E402
-from tracing.grader import TracingProgress, start_attempt  # noqa: E402
+from screentime.service import ScreenTimeError, ScreenTimeService  # noqa: E402
+from study.planner import PlanError, PlanHanja, StudyPlanner, kst_today  # noqa: E402
+from tracing.grader import GradeTolerance, TracingProgress, start_attempt  # noqa: E402
 from tracing.strokes import StrokeData, is_gradable, load_db as load_stroke_db  # noqa: E402
 from usage import CHATBOT, MOCKEXAM, LimitReached, UsageLimitConfig, UsageService  # noqa: E402
 
+log = logging.getLogger("hanja.app")
 KST = timezone(timedelta(hours=9))
 BODY_NAMES = {"korea_eomunhoe": "한국어문회", "daegeom": "대한검정회"}
+SCHEDULER_INTERVAL_SECONDS = 3600
 
 
 def hanja_by_body(store: HanjaStore) -> Dict[str, Dict[str, Q.Hanja]]:
@@ -60,13 +78,39 @@ def hanja_by_body(store: HanjaStore) -> Dict[str, Dict[str, Q.Hanja]]:
 
 
 class Clock:
+    """Wall clock (KST) with an optional fixed time and a dev-only offset (timer / auto-submit tests)."""
+
     def __init__(self, t: Optional[datetime] = None):
         self.t = t
+        self.offset = timedelta(0)
 
     def __call__(self) -> datetime:
-        return self.t or datetime.now(KST)
+        return (self.t or datetime.now(KST)) + self.offset
 
 
+class BillingPaymentStore(PaymentStore):
+    """Lifecycle view of BillingService.payments: on account deletion the parent's payment rows leave the
+    operational store and go to the separate 5-year archive (전자상거래법)."""
+
+    class _Records:
+        def __init__(self, bill: BillingService):
+            self.bill = bill
+
+        def values(self) -> List[PaymentRecord]:
+            return [PaymentRecord(p.id, p.parent_id, p.amount, p.paid_at,
+                                  {"plan_id": p.plan_id, "order_id": p.order_id, "payment_key": p.payment_key,
+                                   "refunded": p.refunded}) for p in self.bill.payments]
+
+        def pop(self, rid: str) -> PaymentRecord:
+            rec = next(r for r in self.values() if r.id == rid)
+            self.bill.payments[:] = [p for p in self.bill.payments if p.id != rid]
+            return rec
+
+    def __init__(self, bill: BillingService) -> None:
+        self.records = self._Records(bill)  # type: ignore[assignment]
+
+
+# ---- request bodies ------------------------------------------------------------------
 class TargetIn(BaseModel):
     body: str
     grade: str
@@ -74,7 +118,7 @@ class TargetIn(BaseModel):
 
 class ChatIn(BaseModel):
     message: str
-    thread_id: str = "t1"
+    thread_id: Optional[str] = None
 
 
 class ExamStartIn(BaseModel):
@@ -94,11 +138,55 @@ class ReviewIn(BaseModel):
     correct: bool
 
 
-def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dict] = None) -> FastAPI:
-    env = dict(os.environ if env is None else env)
+class PlanIn(BaseModel):
+    exam_date: Optional[str] = None      # YYYY-MM-DD (KST); null clears -> 90-day default
+    daily_count: Optional[int] = None    # 3..15; null clears -> even split
+
+
+class ScreenTimeIn(BaseModel):
+    daily_minutes: Optional[int] = None
+    windows: List[List[str]] = []        # [["15:00", "18:00"], ...]
+
+
+class ParentPinIn(BaseModel):
+    pin: str
+
+
+class ExtraTimeIn(BaseModel):
+    parent_pin: str
+    minutes: int
+
+
+class ExtensionIn(BaseModel):
+    minutes: int = 15
+
+
+class ResolveIn(BaseModel):
+    approve: bool
+    minutes: Optional[int] = None
+
+
+class ClockIn(BaseModel):
+    advance_minutes: float = 0
+    reset: bool = False
+
+
+def _build_llm(env: Dict[str, str]) -> LLMRouter:
+    if env.get("LLM_CONFIG"):
+        cfg = json.loads(env["LLM_CONFIG"])
+        if "tiers" not in cfg and cfg.get("provider", "bedrock") == "bedrock" and "region" not in cfg:
+            cfg["region"] = aws_region(env)
+        return build_llm_router(cfg)  # Haiku by default, Sonnet for reasoning tasks
+    fake = FakeProvider(lambda s, m: "OFF_TOPIC" if "분류기" in s else "學은 배우다라는 뜻이에요. 쉬운 말이에요. 같이 해요.")
+    return LLMRouter({"fast": fake, "reasoning": fake})
+
+
+def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dict] = None,
+               scheduler: bool = False) -> FastAPI:
+    env = load_runtime_env() if env is None else clean(env)
     clock = clock or Clock()
     production = env.get("HANJA_ENV") == "production"
-    app = FastAPI(title="hanja-tutor")
+    admin_token = env.get("ADMIN_TOKEN", "")
 
     # ---- data (real DB; no synthetic hanja) -----------------------------------
     store = HanjaStore.load()
@@ -109,6 +197,7 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
     hanja = hanja_by_body(store)
     sdb: Dict[str, StrokeData] = load_stroke_db()
     kb = HanjaKnowledge.from_store(store)
+    tol = GradeTolerance.from_env(env)
 
     # ---- services -----------------------------------------------------------
     ver = FakeIdentityVerifier()
@@ -131,33 +220,58 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
                           usage=usage, notifier=push, email=mail)
     late.b = bill
     refunds = RefundService(bill, usage, clock, notifier=push)
-    if env.get("LLM_CONFIG"):
-        llm_router = build_llm_router(json.loads(env["LLM_CONFIG"]))  # Haiku by default, Sonnet for reasoning tasks
-    else:
-        fake = FakeProvider(lambda s, m: "OFF_TOPIC" if "분류기" in s else "學은 배우다라는 뜻이에요. 쉬운 말이에요. 같이 해요.")
-        llm_router = LLMRouter({"fast": fake, "reasoning": fake})
-    bot = ChatbotService(acc, kb, llm_router.for_task("chat"), None, push, clock,
+    llm_router = _build_llm(env)
+    dictionary = UrimalsaemClient(env["OPENDICT_API_KEY"]) if env.get("OPENDICT_API_KEY") else None
+    bot = ChatbotService(acc, kb, llm_router.for_task("chat"), dictionary, push, clock,
                          use_llm_classifier=bool(env.get("LLM_CONFIG")), usage=usage,
                          classifier_llm=llm_router.for_task("safety_classifier"))
+
+    db_url = database_url(env)
+    if db_url:  # LangGraph PostgresSaver + chat_threads metadata table
+        conv = ConversationService(bot, acc, PostgresCheckpointer.from_conn_string(db_url), PostgresThreadMeta(db_url))
+    else:
+        conv = ConversationService(bot, acc, InMemoryCheckpointer(), InMemoryThreadMeta())
 
     planners: Dict[str, StudyPlanner] = {}
     tracings: Dict[str, TracingProgress] = {}
     attempts: Dict[str, object] = {}
     pool = lambda b, g: cumulative_pool(b, g, bodies[b], assign, hanja.get(b, {}))  # noqa: E731
+
+    def on_wrong_char(cid: str, ch: str) -> None:
+        try:
+            planner_of(cid).add_review(ch)
+        except PlanError as e:  # never fail grading because of the review feed
+            log.warning("review feed skipped %s: %s", ch, e)
+
     exam = MockExamService(formats, pool, sdb, clock=clock, charge=usage.exam_charge(),
-                           on_wrong_char=lambda pid, c: planner_of(pid).add_review(c), pending=pending)
-    st = ScreenTimeService(acc, clock)
+                           on_wrong_char=on_wrong_char, pending=pending, tol=tol)
+    st = ScreenTimeService(acc, clock, exam_in_progress=lambda cid: exam._active(cid) is not None,
+                           notify_parent=push.notify)
 
     def target_of(cid: str) -> Optional[tuple]:
         t = acc.children[cid].extra.get("target")
         return tuple(t) if t else None
+
+    def cumulative_chars(b: str, g: str) -> set:
+        order = list(bodies[b])
+        out: set = set()
+        for x in order[: order.index(g) + 1]:
+            out |= set(assign.get((b, x), ()))
+        return out
 
     def planner_of(cid: str) -> StudyPlanner:
         if cid not in planners:
             t = target_of(cid)
             # The DB has no usage-frequency column yet, so the rank is the official list order of the grade.
             chars = store.grade_chars(*t) if t else []
-            planners[cid] = StudyPlanner([PlanHanja(c, i + 1) for i, c in enumerate(chars)], clock)
+            extra = acc.children[cid].extra
+            ed = extra.get("exam_date")
+            p = StudyPlanner([PlanHanja(c, i + 1) for i, c in enumerate(chars)], clock,
+                             exam_date=date.fromisoformat(ed) if ed else None,
+                             review_chars=cumulative_chars(*t) if t else ())
+            if extra.get("daily_count") is not None:
+                p.set_daily_override(int(extra["daily_count"]))
+            planners[cid] = p
         return planners[cid]
 
     def reading_for(cid: str, ch: str) -> Optional[dict]:
@@ -181,9 +295,45 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
     def tracing_of(cid: str) -> TracingProgress:
         return tracings.setdefault(cid, TracingProgress())
 
-    reports = ReportService(acc, bill, st, planner_of, tracing_of, exam, None, usage, push, mail,
+    reports = ReportService(acc, bill, st, planner_of, tracing_of, exam, conv, usage, push, mail,
                             clock=clock, reading_for=reading_for)
 
+    # ---- lifecycle (deletion / dormancy) --------------------------------------------
+    life = LifecycleService(acc, conv, push, payments=BillingPaymentStore(bill), clock=clock)
+
+    def purge_learning(cid: str) -> None:
+        """Every learning record of a deleted child (conversations/safety events are purged by lifecycle)."""
+        planners.pop(cid, None)
+        tracings.pop(cid, None)
+        for k in [k for k in attempts if k.startswith(cid + ":")]:
+            del attempts[k]
+        for eid in [i for i, e in exam.exams.items() if e.profile_id == cid]:
+            del exam.exams[eid]
+        for d in (reports._assigned, reports._done):
+            for k in [k for k in d if k[0] == cid]:
+                del d[k]
+        reports._reviews.pop(cid, None)
+        st.settings.pop(cid, None)
+        for k in [k for k in st._days if k[0] == cid]:
+            del st._days[k]
+        for rid in [r.id for r in st.requests.values() if r.child_id == cid]:
+            del st.requests[rid]
+        with usage._lock:
+            for k in [k for k in usage._counts if k[0] == cid]:
+                del usage._counts[k]
+
+    life.child_purge_hooks.append(purge_learning)
+
+    def learning_records(cid: str) -> int:
+        """Remaining learning rows for a child (deletion check)."""
+        n = int(cid in planners) + int(cid in tracings) + sum(k.startswith(cid + ":") for k in attempts)
+        n += sum(e.profile_id == cid for e in exam.exams.values())
+        n += sum(k[0] == cid for k in reports._assigned) + sum(k[0] == cid for k in reports._done)
+        n += len(reports._reviews.get(cid, [])) + sum(k[0] == cid for k in st._days)
+        n += len(conv.meta.for_child(cid)) + sum(e.child_id == cid for e in bot.events)
+        return n
+
+    # ---- auth helpers ----------------------------------------------------------------
     def parent_of_session(tok: str) -> str:
         return acc.parent_for_session(tok).id
 
@@ -200,29 +350,105 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
             raise HTTPException(404, {"code": "not_found"})
         return c
 
+    def parent_child(auth: Optional[str], child_id: str):
+        """Parent-only routes: a valid session that owns the child."""
+        pid = pid_from(auth)
+        c = acc.children.get(child_id)
+        if c is None or c.parent_id != pid:
+            raise HTTPException(404, {"code": "not_found"})
+        return pid, c
+
+    def admin(tok: Optional[str]) -> None:
+        import hmac
+
+        if not admin_token or not hmac.compare_digest(tok or "", admin_token):
+            raise HTTPException(403, {"code": "admin_only"})
+
+    def unlocked(cid: str) -> None:
+        """Screen-time lock: child features stop once the parent's limit is reached (exam excepted)."""
+        s = st.status(cid)
+        if s["locked"]:
+            raise HTTPException(423, {"code": "app_locked", "reason": s["reason"]})
+
+    def guard(fn):
+        try:
+            return fn()
+        except AccountError as e:
+            code = {"not_found": 404, "forbidden": 403, "chatbot_disabled_no_ai_consent": 403}.get(e.code, 422)
+            raise HTTPException(code, {"code": e.code, "message": str(e)})
+        except ScreenTimeError as e:
+            raise HTTPException(422 if e.code == "settings_invalid" else 403, {"code": e.code, "message": str(e)})
+        except PlanError as e:
+            raise HTTPException(422, {"code": "plan_invalid", "message": str(e)})
+
     def exam_info(b: str, g: str) -> dict:
         status = F.exam_status(formats, pending, b, g)
         return {"status": status, "message": F.FORMAT_PENDING_MESSAGE if status == "format_pending" else None}
 
+    def exam_view(e) -> dict:
+        v = exam.public_view(e)
+        v.update(minutes=e.fmt.minutes, pass_score=e.fmt.pass_score, total_score=e.fmt.total_score,
+                 remaining_seconds=0 if e.submitted else max(0, int((e.deadline - clock()).total_seconds())),
+                 answers=dict(e.answers), submitted=e.submitted, result=e.result if e.submitted else None)
+        return v
+
+    def thread_json(m) -> dict:
+        return {"thread_id": m.thread_id, "title": m.title, "created_at": m.created_at.isoformat(),
+                "last_message_at": m.last_message_at.isoformat()}
+
+    # ---- background jobs -----------------------------------------------------------
+    def run_jobs() -> dict:
+        out = {"dormancy": life.run_dormancy_sweep(), "weekly_summary": reports.send_weekly_summaries(),
+               "billing": bill.run_due()}
+        return out
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        stop = threading.Event()
+        if scheduler:
+            def loop():
+                while not stop.wait(SCHEDULER_INTERVAL_SECONDS):
+                    try:
+                        run_jobs()
+                    except Exception:  # noqa: BLE001
+                        log.exception("scheduled jobs failed")
+            threading.Thread(target=loop, daemon=True, name="hanja-jobs").start()
+        yield
+        stop.set()
+
+    app = FastAPI(title="hanja-tutor", lifespan=lifespan)
     api = APIRouter(prefix="/api")
-    api.include_router(accounts_router(acc))
+    api.include_router(accounts_router(acc, login=life.login_parent))
     api.include_router(billing_router(bill, parent_of_session))
-    api.include_router(refunds_router(refunds, parent_of_session, env.get("ADMIN_TOKEN", "")))
+    api.include_router(refunds_router(refunds, parent_of_session, admin_token))
 
     @api.get("/health")
     def health():
-        return {"ok": True}
+        fast = llm_router.for_task("chat")
+        return {"ok": True, "llm": {"chat": type(fast).__name__,
+                                    "chat_model": getattr(fast, "model_id", None),
+                                    "question_generation_model": getattr(llm_router.for_task("question_generation"), "model_id", None)},
+                "dictionary": "urimalsaem" if dictionary else None,
+                "conversation_store": "postgres" if db_url else "memory"}
 
     if not production:
         @api.post("/dev/verify")
         def dev_verify(body: dict):
             return {"verification_token": ver.complete_verification(str(body.get("ci", "ci-dev")))}
 
+        @api.post("/dev/clock")
+        def dev_clock(body: ClockIn):
+            if not isinstance(clock, Clock):
+                raise HTTPException(409, {"code": "clock_not_shiftable"})
+            clock.offset = timedelta(0) if body.reset else clock.offset + timedelta(minutes=body.advance_minutes)
+            return {"now": clock().isoformat()}
+
     @api.get("/catalog")
     def catalog():
         return [{"body": b, "name": BODY_NAMES.get(b, b), "grades": g,
                  "exam": {x: exam_info(b, x) for x in g}} for b, g in bodies.items()]
 
+    # ---- parent: child target / plan --------------------------------------------------
     @api.put("/children/{child_id}/target")
     def set_target(child_id: str, body: TargetIn, authorization: Optional[str] = Header(None)):
         c = child_for(authorization, child_id)
@@ -232,12 +458,51 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
         planners.pop(child_id, None)
         return {"body": body.body, "grade": body.grade, "exam": exam_info(body.body, body.grade)}
 
+    def plan_json(cid: str) -> dict:
+        p = planner_of(cid)
+        plan = p.plan_for_today()
+        sched = p.projected_schedule()
+        return {"exam_date": p.exam_date.isoformat() if p.exam_date else None,
+                "daily_count": p.default_override, "today_quota": plan.quota, "days_left": plan.days_left,
+                "feasible": plan.feasible, "remaining": len(p.remaining()), "overridden": plan.overridden,
+                "schedule": [{"date": d.isoformat(), "count": n} for d, n in list(sched.items())[:14]]}
+
+    @api.get("/children/{child_id}/plan")
+    def get_plan(child_id: str, authorization: Optional[str] = Header(None)):
+        _, c = parent_child(authorization, child_id)
+        if not c.extra.get("target"):
+            raise HTTPException(409, {"code": "no_target"})
+        return plan_json(child_id)
+
+    @api.put("/children/{child_id}/plan")
+    def put_plan(child_id: str, body: PlanIn, authorization: Optional[str] = Header(None)):
+        _, c = parent_child(authorization, child_id)
+        if not c.extra.get("target"):
+            raise HTTPException(409, {"code": "no_target"})
+        ed = None
+        if body.exam_date:
+            try:
+                ed = date.fromisoformat(body.exam_date)
+            except ValueError:
+                raise HTTPException(422, {"code": "plan_invalid", "message": "exam_date must be YYYY-MM-DD"})
+            if ed < kst_today(clock):
+                raise HTTPException(422, {"code": "plan_invalid", "message": "exam date is in the past"})
+        p = planner_of(child_id)
+        guard(lambda: p.set_daily_override(body.daily_count))
+        p.set_exam_date(ed)
+        c.extra["exam_date"] = ed.isoformat() if ed else None
+        c.extra["daily_count"] = body.daily_count
+        return plan_json(child_id)
+
+    # ---- child: today / review ------------------------------------------------------
     @api.get("/children/{child_id}/today")
     def today(child_id: str):
         c = child_for(None, child_id)
         if not c.extra.get("target"):
             raise HTTPException(409, {"code": "no_target"})
+        unlocked(child_id)
         s = planner_of(child_id).todays_session()
+        reports.start_day(child_id)
         b, g = c.extra["target"]
         return {"body": b, "grade": g, "exam": exam_info(b, g),
                 "new": [card(child_id, x) for x in s["new"]], "reviews": [card(child_id, x) for x in s["reviews"]]}
@@ -263,9 +528,9 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
     @api.post("/children/{child_id}/today/{char}/complete")
     def complete(child_id: str, char: str):
         child_for(None, child_id)
+        unlocked(child_id)
         char = nfc(char)
         try:
-            planner_of(child_id).complete_new(char)
             reports.complete_new(child_id, char)
         except Exception as e:  # noqa: BLE001
             raise HTTPException(422, {"code": "cannot_complete", "message": str(e)})
@@ -274,20 +539,25 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
     @api.post("/children/{child_id}/reviews/{char}")
     def review(child_id: str, char: str, body: ReviewIn):
         child_for(None, child_id)
+        unlocked(child_id)
         char = nfc(char)
         try:
-            planner_of(child_id).answer_review(char, body.correct)
             reports.answer_review(child_id, char, body.correct)
         except Exception as e:  # noqa: BLE001
             raise HTTPException(422, {"code": "cannot_review", "message": str(e)})
         return {"ok": True}
 
     # ---- tracing ------------------------------------------------------------
+    @api.get("/tracing/tolerance")
+    def tracing_tolerance():
+        return tol.as_dict()
+
     @api.post("/children/{child_id}/tracing/{char}/start")
     def trace_start(child_id: str, char: str):
         child_for(None, child_id)
+        unlocked(child_id)
         char = nfc(char)
-        r = start_attempt(char, sdb)
+        r = start_attempt(char, sdb, tol)
         strokes_out = [[list(p) for p in s] for s in (sdb[char].strokes if char in sdb else ())]
         if r["mode"] == "graded":
             attempts[f"{child_id}:{char}"] = r["attempt"]
@@ -318,19 +588,33 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
         t = c.extra.get("target")
         if not t:
             raise HTTPException(409, {"code": "no_target"})
+        if exam._active(child_id) is None:  # resuming is always allowed; a new exam needs unlocked time
+            unlocked(child_id)
         try:
             e = exam.start(child_id, t[0], t[1], body.seed)
         except LimitReached as e2:
             raise HTTPException(429, {"code": "limit_reached", "resets_at": e2.resets_at.isoformat()})
         except FormatPending:
             raise HTTPException(409, {"code": "exam_format_pending", "message": F.FORMAT_PENDING_MESSAGE})
-        except ExamError as e2:
+        except (ExamError, Q.ExamUnavailable) as e2:
             raise HTTPException(409, {"code": "exam_error", "message": str(e2)})
-        v = exam.public_view(e)
-        v["minutes"] = e.fmt.minutes
-        v["pass_score"] = e.fmt.pass_score
-        v["total_score"] = e.fmt.total_score
-        return v
+        return exam_view(e)
+
+    @api.get("/children/{child_id}/exams/active")
+    def exam_active(child_id: str):
+        child_for(None, child_id)
+        e = exam._active(child_id)
+        if e is None:
+            raise HTTPException(404, {"code": "no_active_exam"})
+        return exam_view(e)
+
+    @api.get("/exams/{exam_id}")
+    def exam_get(exam_id: str):
+        try:
+            e = exam._get(exam_id)  # applies the wall-clock deadline (auto-submit)
+        except ExamError:
+            raise HTTPException(404, {"code": "not_found"})
+        return exam_view(e)
 
     @api.post("/exams/{exam_id}/answer")
     def exam_answer(exam_id: str, body: AnswerIn):
@@ -347,27 +631,94 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
         except ExamError as e:
             raise HTTPException(409, {"code": "exam_error", "message": str(e)})
 
-    # ---- chatbot ---------------------------------------------------------------
+    # ---- chatbot + conversations (child) ---------------------------------------------
     @api.post("/children/{child_id}/chat")
     def chat(child_id: str, body: ChatIn):
         child_for(None, child_id)
-        try:
-            r = bot.ask(child_id, body.thread_id, body.message)
-        except AccountError as e:
-            raise HTTPException(403, {"code": e.code})
-        return {"status": r.status, "reply": r.reply, "locked": r.locked_today}
+        unlocked(child_id)
+        tid, r = guard(lambda: conv.send(child_id, body.message, body.thread_id))
+        return {"status": r.status, "reply": r.reply, "locked": r.locked_today, "thread_id": tid,
+                "sources": r.sources}
+
+    @api.post("/children/{child_id}/chat/stream")
+    def chat_stream(child_id: str, body: ChatIn):
+        """SSE: thread -> token* -> done | error (error carries retry=True; the client shows a retry button)."""
+        child_for(None, child_id)
+        unlocked(child_id)
+        guard(lambda: acc.require_chatbot(child_id))
+        if body.thread_id:
+            guard(lambda: conv._owned_thread(child_id, body.thread_id))
+        events = conv.send_stream(child_id, body.message, body.thread_id)
+
+        def frames():
+            try:
+                for ev in events:
+                    yield sse(ev)
+            except Exception:  # noqa: BLE001 - the client always gets a retryable error frame
+                log.exception("chat stream failed")
+                yield sse({"type": "error", "message": "지금은 답을 만들지 못했어요. 조금 있다가 다시 물어봐 주세요.",
+                           "retry": True, "status": "error"})
+
+        return StreamingResponse(frames(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    @api.get("/children/{child_id}/threads")
+    def threads(child_id: str):
+        child_for(None, child_id)
+        return [thread_json(m) for m in guard(lambda: conv.list_threads(child_id))]
+
+    @api.post("/children/{child_id}/threads", status_code=201)
+    def new_thread(child_id: str):
+        child_for(None, child_id)
+        return thread_json(guard(lambda: conv.create_thread(child_id)))
+
+    @api.get("/children/{child_id}/threads/{thread_id}")
+    def thread_messages(child_id: str, thread_id: str):
+        child_for(None, child_id)
+        return {"thread_id": thread_id, "messages": guard(lambda: conv.get_messages(child_id, thread_id))}
+
+    @api.delete("/children/{child_id}/threads/{thread_id}")
+    def delete_thread(child_id: str, thread_id: str):
+        child_for(None, child_id)
+        guard(lambda: conv.delete_thread_by_child(child_id, thread_id))
+        return {"ok": True}
+
+    # ---- parent: conversation viewing / safety events (free, unlimited) ----------------
+    @api.get("/children/{child_id}/conversations")
+    def parent_threads(child_id: str, authorization: Optional[str] = Header(None)):
+        pid, _ = parent_child(authorization, child_id)
+        return [thread_json(m) for m in guard(lambda: reports.conversations_list(pid, child_id))]
+
+    @api.get("/children/{child_id}/conversations/{thread_id}")
+    def parent_thread(child_id: str, thread_id: str, authorization: Optional[str] = Header(None)):
+        pid, _ = parent_child(authorization, child_id)
+        return {"thread_id": thread_id,
+                "messages": guard(lambda: reports.conversation_messages(pid, child_id, thread_id))}
+
+    @api.delete("/children/{child_id}/conversations/{thread_id}")
+    def parent_delete_thread(child_id: str, thread_id: str, authorization: Optional[str] = Header(None)):
+        pid, _ = parent_child(authorization, child_id)
+        guard(lambda: conv.delete_thread_by_parent(pid, child_id, thread_id))
+        return {"ok": True}
+
+    @api.get("/children/{child_id}/safety-events")
+    def safety_events(child_id: str, authorization: Optional[str] = Header(None)):
+        pid, _ = parent_child(authorization, child_id)
+        return [{"id": e.id, "category": e.category, "source": e.source, "at": e.at.isoformat(),
+                 "thread_count": e.thread_count, "parent_notified": e.parent_notified}
+                for e in guard(lambda: bot.parent_safety_view(pid, child_id))]
 
     # ---- reports ------------------------------------------------------------------
     @api.get("/children/{child_id}/report/basic")
     def report_basic(child_id: str, authorization: Optional[str] = Header(None)):
         pid = pid_from(authorization)
-        return reports.basic_report(pid, child_id)
+        return guard(lambda: reports.basic_report(pid, child_id))
 
     @api.get("/children/{child_id}/report/detailed")
     def report_detailed(child_id: str, authorization: Optional[str] = Header(None)):
         pid = pid_from(authorization)
         try:
-            return reports.detailed_report(pid, child_id)
+            return guard(lambda: reports.detailed_report(pid, child_id))
         except SubscriptionRequired:
             raise HTTPException(402, {"code": "subscription_required"})
 
@@ -379,13 +730,130 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
     @api.get("/children")
     def children(authorization: Optional[str] = Header(None)):
         pid = pid_from(authorization)
-        return [{"id": c.id, "nickname": c.nickname, "ai_consent": c.ai_consent,
-                 "target": list(c.extra.get("target") or [])} for c in acc.children_of(pid)]
+        return [{"id": c.id, "nickname": c.nickname, "ai_consent": c.ai_consent, "locked": c.locked,
+                 "target": list(c.extra.get("target") or []), "exam_date": c.extra.get("exam_date")}
+                for c in acc.children_of(pid)]
+
+    # ---- screen time (safety: never paywalled) ------------------------------------------
+    def st_json(cid: str) -> dict:
+        s = st.settings.get(cid)
+        return {"daily_minutes": s.daily_minutes if s else None,
+                "windows": [[f"{w.start_min // 60:02d}:{w.start_min % 60:02d}",
+                             "24:00" if w.end_min == 1440 else f"{w.end_min // 60:02d}:{w.end_min % 60:02d}"]
+                            for w in (s.windows if s else [])],
+                "status": st.status(cid)}
+
+    @api.get("/children/{child_id}/screentime")
+    def get_screentime(child_id: str, authorization: Optional[str] = Header(None)):
+        parent_child(authorization, child_id)
+        return st_json(child_id)
+
+    @api.put("/children/{child_id}/screentime")
+    def put_screentime(child_id: str, body: ScreenTimeIn, authorization: Optional[str] = Header(None)):
+        pid, _ = parent_child(authorization, child_id)
+        guard(lambda: st.set_limits(pid, child_id, body.daily_minutes, [tuple(w) for w in body.windows]))
+        return st_json(child_id)
+
+    @api.put("/parents/me/pin")
+    def set_parent_pin(body: ParentPinIn, authorization: Optional[str] = Header(None)):
+        pid = pid_from(authorization)
+        guard(lambda: st.set_parent_pin(pid, body.pin))
+        return {"ok": True}
+
+    @api.post("/children/{child_id}/heartbeat")
+    def heartbeat(child_id: str):
+        child_for(None, child_id)
+        return st.heartbeat(child_id)
+
+    @api.get("/children/{child_id}/screentime/status")
+    def st_status(child_id: str):
+        child_for(None, child_id)
+        return st.status(child_id)
+
+    @api.post("/children/{child_id}/screentime/extra")
+    def extra_time(child_id: str, body: ExtraTimeIn):
+        """Parent types their PIN on the child's device to grant extra minutes."""
+        c = child_for(None, child_id)
+        return guard(lambda: st.grant_extra_time(c.parent_id, child_id, body.parent_pin, body.minutes))
+
+    @api.post("/children/{child_id}/extension-requests", status_code=201)
+    def ext_request(child_id: str, body: ExtensionIn):
+        child_for(None, child_id)
+        r = guard(lambda: st.request_extension(child_id, body.minutes))
+        return {"id": r.id, "status": r.status, "minutes": r.minutes}
+
+    @api.get("/children/{child_id}/extension-requests/{request_id}")
+    def ext_status(child_id: str, request_id: str):
+        child_for(None, child_id)
+        return {"id": request_id, "status": guard(lambda: st.request_status(child_id, request_id))}
+
+    @api.get("/parents/me/extension-requests")
+    def ext_pending(authorization: Optional[str] = Header(None)):
+        pid = pid_from(authorization)
+        return [{"id": r.id, "child_id": r.child_id, "nickname": acc.children[r.child_id].nickname,
+                 "minutes": r.minutes, "created_at": r.created_at.isoformat()} for r in st.pending_requests(pid)]
+
+    @api.post("/parents/me/extension-requests/{request_id}")
+    def ext_resolve(request_id: str, body: ResolveIn, authorization: Optional[str] = Header(None)):
+        pid = pid_from(authorization)
+        r = guard(lambda: st.resolve_request(pid, request_id, body.approve, body.minutes))
+        return {"id": r.id, "status": r.status}
+
+    @api.get("/parents/me/notifications")
+    def notifications(authorization: Optional[str] = Header(None)):
+        """Parent push inbox (the PWA polls it and shows system notifications)."""
+        pid = pid_from(authorization)
+        return [{"seq": i, "kind": k, "payload": p} for i, (who, k, p) in enumerate(push.sent) if who == pid]
+
+    # ---- deletion / dormancy ------------------------------------------------------------
+    @api.delete("/children/{child_id}")
+    def delete_child(child_id: str, authorization: Optional[str] = Header(None)):
+        pid, _ = parent_child(authorization, child_id)
+        guard(lambda: life.delete_child(pid, child_id))
+        return {"ok": True, "remaining_learning_records": learning_records(child_id)}
+
+    @api.delete("/parents/me")
+    def delete_account(authorization: Optional[str] = Header(None)):
+        pid = pid_from(authorization)
+        kids = [c.id for c in acc.children_of(pid)]
+        bill.subs.pop(pid, None)  # no further renewals for a deleted account
+        guard(lambda: life.delete_account(pid))
+        return {"ok": True, "remaining_learning_records": sum(learning_records(k) for k in kids),
+                "archived_payments": sum(1 for r in life.archive.rows if r.record.parent_id == pid)}
+
+    # ---- operator jobs (cron / scheduler) -------------------------------------------------
+    @api.post("/admin/jobs/run")
+    def admin_jobs(x_admin_token: Optional[str] = Header(None)):
+        admin(x_admin_token)
+        return run_jobs()
+
+    @api.post("/admin/jobs/weekly-summary")
+    def admin_weekly(x_admin_token: Optional[str] = Header(None)):
+        admin(x_admin_token)
+        return {"sent": reports.send_weekly_summaries()}
+
+    @api.post("/admin/jobs/dormancy")
+    def admin_dormancy(x_admin_token: Optional[str] = Header(None)):
+        admin(x_admin_token)
+        return life.run_dormancy_sweep()
 
     app.include_router(api)
     app.state.services = dict(acc=acc, usage=usage, bill=bill, refunds=refunds, exam=exam, gateway=gw,
-                              llm_router=llm_router, store=store, strokes=sdb, bot=bot, reports=reports)
+                              llm_router=llm_router, store=store, strokes=sdb, bot=bot, reports=reports,
+                              conv=conv, life=life, screentime=st, planners=planners, push=push,
+                              learning_records=learning_records, clock=clock, dictionary=dictionary, tol=tol)
     return app
 
 
-app = create_app()
+_APP: Optional[FastAPI] = None
+
+
+def __getattr__(name: str):
+    """``uvicorn app.main:app`` builds the server app lazily, so importing this module (tests) never
+    reads backend/.env or starts the scheduler."""
+    global _APP
+    if name == "app":
+        if _APP is None:
+            _APP = create_app(scheduler=True)
+        return _APP
+    raise AttributeError(name)

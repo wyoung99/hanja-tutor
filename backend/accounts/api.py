@@ -42,8 +42,11 @@ class LoginIn(BaseModel):
     verification_token: str
 
 
-def create_router(svc: AccountService) -> APIRouter:
+def create_router(svc: AccountService, login=None) -> APIRouter:
+    """`login`: optional (verification_token) -> session override, e.g. LifecycleService.login_parent
+    which also restores a dormant account's separately stored data."""
     r = APIRouter()
+    do_login = login or svc.login_parent
 
     def guard(fn):
         try:
@@ -66,7 +69,7 @@ def create_router(svc: AccountService) -> APIRouter:
 
     @r.post("/parents/login")
     def login(body: LoginIn):
-        return {"session": guard(lambda: svc.login_parent(body.verification_token))}
+        return {"session": guard(lambda: do_login(body.verification_token))}
 
     @r.post("/children", status_code=201)
     def create_child(body: ChildIn, authorization: Optional[str] = Header(None)):
