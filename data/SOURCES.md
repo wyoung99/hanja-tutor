@@ -87,12 +87,13 @@
 | 신출자 수 | 30 | 20 | 20 | 30 | 150 | 150 | 200 | 200 | 200 |
 | 누적(공식) | 30 | 50 | 70 | 100 | 250 | 400 | 600 | 800 | 1000 |
 
-### ⚠ 급수 체계 불일치 (사용자 결정 필요)
-대한검정회에는 **준5급·준4급·준3급**이 있다. `exam_bodies.json`의 `daegeom` 급수는 `8,7,6,5,4,3`뿐이다.
-지원 급수의 신출자만 모으면 5급 누적이 220자가 된다(공식 250). 4급은 570자(공식 600), 3급은 970자(공식 1000)가 된다. 준급 신출자가 학습 범위에서 빠지는 것이다.
-- 준급 공식 목록은 `official_lists/daegeom/준5.txt`, `준4.txt`, `준3.txt`에 두었다. 현재 verify.py는 미지원 급수의 공식 목록을 비교하지 않으므로 이 파일들은 무시된다.
-- 준급 DB 배정은 `hanja_db/assignments_daegeom_jun_grades.csv`로 분리했다. `assignments.csv`에 넣으면 verify가 "DB grade not supported"로 보고하기 때문이다.
-- 선택지: (a) `exam_bodies.json`에 준급 추가(권장, Seed 수정 필요), (b) 준급 신출자를 다음 정급에 합치는 규칙을 Seed에 명시.
+### 급수 체계: 준급 포함 (결정 2026-11-05)
+대한검정회에는 **준5급·준4급·준3급**이 있다. 결정에 따라 `exam_bodies.json`의 `daegeom` 급수를
+`8,7,6,준5,5,준4,4,준3,3`(공식 등급 순서)으로 바꾸고, 준급 배정 380행을 `assignments.csv`에 합쳤다.
+- 누적이 공식값과 같아졌다: 5급 250, 4급 600, 3급 1000.
+- verify.py 대조: 18개 급수 모두 공식 목록 대비 누락·초과 0.
+- **남은 일:** 준급 모의고사 형식(문항 수·시간·합격선)은 공식 자료를 확보하지 못해 `exam_formats.json`에 넣지 않았다.
+  출제 형식을 지어내지 않기 위해, 기관 공고를 확인한 뒤 운영자가 추가해야 한다.
 
 ### 라이선스/약관
 - 사이트 하단: "Copyright 2003 사단법인 대한민국한자교육연구회·대한검정회. All Right Reserved."
@@ -110,8 +111,7 @@
 
 | 파일 | 내용 |
 |---|---|
-| `assignments.csv` | body,grade,char. 지원 급수만 있다(어문회 1000행, 검정회 620행). |
-| `assignments_daegeom_jun_grades.csv` | 검정회 준5/준4/준3 배정(380행). 정책 결정 전까지 분리해 둔다. |
+| `assignments.csv` | body,grade,char. 어문회 1000행, 검정회 1000행(준5·준4·준3 380행 포함). |
 | `hanja.csv` | char,hun,eum,reviewed,char_nfc,hunum_source,hunum_raw. 1170자, **reviewed는 전부 "0"**. 두 기관에 모두 있는 글자는 어문회 훈음을 우선했다. |
 | `hunum_by_body.csv` | body,grade,char,hun,eum,source_raw. 기관별 원문 훈음을 손실 없이 보존한다. |
 
