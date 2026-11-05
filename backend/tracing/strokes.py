@@ -1,82 +1,72 @@
-"""StrokeData: Korean-standard stroke order/shape with a reviewed flag.
+"""StrokeData: hanzi-writer (Make Me a Hanzi) stroke medians with a per-char grading-exclusion flag.
 
-Coordinates use hanzi-writer's 1000x1000 space. Each stroke is a median polyline.
-A character is *gradable* only when (a) its reviewed flag is set and (b) its stroke
-data matches the Korean reference data with zero differences. Otherwise the app
-shows the animation only and mock exams must not draw a writing question from it.
+Coordinates use the app's 0..1000 screen space (y down). Each stroke is a median polyline converted
+from hanzi-writer-data by ``tracing/build_stroke_data.py`` (source/version/license in data/SOURCES.md).
+
+Decision (2026-11-05, AC7 verify_exemption_reason): the data is used as-is. Matching it against a
+Korean-standard stroke order is excluded from verification. A character is *gradable* (tracing is
+graded, and it may appear as a mock-exam writing question) iff it has stroke data and its
+``exclude_from_grading`` flag is not set. The flag is the slot for later marking characters whose
+hanzi-writer order differs from the Korean standard. Characters without stroke data are excluded.
 """
 from __future__ import annotations
 
 import json
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Mapping, Tuple
 
 Point = Tuple[float, float]
 DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "stroke_data"
+KOREAN_STANDARD_EXEMPTION = "verification excluded by user decision 2026-11-05"
 
 
 @dataclass(frozen=True)
 class StrokeData:
     char: str
     strokes: Tuple[Tuple[Point, ...], ...]  # ordered; each a median polyline
-    reviewed: bool = False
+    exclude_from_grading: bool = False
 
     @property
     def stroke_count(self) -> int:
         return len(self.strokes)
 
 
-def _parse(raw: dict, default_reviewed: bool) -> Dict[str, StrokeData]:
+def _parse(raw: dict) -> Dict[str, StrokeData]:
+    chars = raw.get("chars", raw)
     out: Dict[str, StrokeData] = {}
-    for ch, v in raw.items():
+    for ch, v in chars.items():
+        if ch.startswith("_"):
+            continue
+        c = unicodedata.normalize("NFC", ch)
         strokes = tuple(tuple((float(x), float(y)) for x, y in s) for s in v["strokes"])
-        out[ch] = StrokeData(ch, strokes, bool(v.get("reviewed", default_reviewed)))
+        out[c] = StrokeData(c, strokes, bool(v.get("exclude_from_grading", False)))
     return out
 
 
-def load_stroke_file(path: Path, default_reviewed: bool = False) -> Dict[str, StrokeData]:
+def load_stroke_file(path: Path) -> Dict[str, StrokeData]:
     if not path.exists():
         return {}
-    return _parse(json.loads(path.read_text(encoding="utf-8")), default_reviewed)
+    return _parse(json.loads(path.read_text(encoding="utf-8")))
+
+
+def load_source(path: Path = DATA_DIR / "strokes.json") -> dict:
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8")).get("_source", {})
 
 
 def load_db() -> Dict[str, StrokeData]:
-    """Corrected hanzi-writer-derived data with per-character reviewed flags."""
+    """hanzi-writer-derived stroke data for every assigned char that has it (NFC keys)."""
     return load_stroke_file(DATA_DIR / "strokes.json")
 
 
-def load_reference() -> Dict[str, StrokeData]:
-    """Korean educational stroke-order reference (external input)."""
-    return load_stroke_file(DATA_DIR / "korean_reference.json", default_reviewed=True)
+def gradable_chars(db: Mapping[str, StrokeData]) -> List[str]:
+    """Chars with stroke data and no exclusion flag: the only chars graded or used for writing questions."""
+    return sorted(c for c, d in db.items() if d.stroke_count and not d.exclude_from_grading)
 
 
-def compare_stroke_data(
-    db: Dict[str, StrokeData], ref: Dict[str, StrokeData], chars: Sequence[str], eps: float = 0.0
-) -> List[str]:
-    """Problems for every target char whose strokes differ from the reference (100% match required)."""
-    problems: List[str] = []
-    for ch in chars:
-        d, r = db.get(ch), ref.get(ch)
-        if d is None:
-            problems.append(f"{ch}: missing in stroke DB")
-        elif r is None:
-            problems.append(f"{ch}: missing in Korean reference")
-        elif d.stroke_count != r.stroke_count:
-            problems.append(f"{ch}: stroke count {d.stroke_count} != reference {r.stroke_count}")
-        else:
-            for i, (a, b) in enumerate(zip(d.strokes, r.strokes), 1):
-                if len(a) != len(b) or any(abs(p[0] - q[0]) > eps or abs(p[1] - q[1]) > eps for p, q in zip(a, b)):
-                    problems.append(f"{ch}: stroke {i} differs from reference")
-                    break
-    return problems
-
-
-def gradable_chars(db: Dict[str, StrokeData], ref: Dict[str, StrokeData]) -> List[str]:
-    """Reviewed AND identical to the reference: the only chars graded or used in mock-exam writing."""
-    return sorted(c for c, d in db.items() if d.reviewed and not compare_stroke_data(db, ref, [c]))
-
-
-def is_gradable(char: str, db: Dict[str, StrokeData], ref: Dict[str, StrokeData]) -> bool:
-    d = db.get(char)
-    return bool(d and d.reviewed and not compare_stroke_data(db, ref, [char]))
+def is_gradable(char: str, db: Mapping[str, StrokeData]) -> bool:
+    d = db.get(unicodedata.normalize("NFC", char))
+    return bool(d and d.stroke_count and not d.exclude_from_grading)

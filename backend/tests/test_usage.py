@@ -228,7 +228,7 @@ def test_locks_only_affect_metered_features_and_child_sees_no_subscription_promp
     pl = StudyPlanner([PlanHanja(chr(0x4E00 + i), i + 1) for i in range(20)], clock=clock)
     assert pl.todays_session() is not None and pl.due_reviews() == []
     ch = next(iter(SDB))
-    assert start_attempt(ch, SDB, SDB)["mode"] == "graded"
+    assert start_attempt(ch, SDB)["mode"] == "graded"
     assert bot.parent_safety_view(p.id, a.id) == []  # safety/supervision still works
     assert bot.ask(a.id, "t", "씨발").status in ("blocked", "locked")  # input guard path is not paywalled
 

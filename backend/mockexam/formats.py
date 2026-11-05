@@ -43,6 +43,25 @@ class ExamFormat:
         return any(t.type == "writing" and t.count > 0 for t in self.types)
 
 
+FORMAT_PENDING_MESSAGE = "형식 준비 중"
+
+
+def load_pending(path: Path = DATA / "exam_formats.json") -> Dict[Tuple[str, str], str]:
+    """(body, grade) -> reason, for supported grades whose official exam format is not known yet."""
+    raw = json.loads(path.read_text(encoding="utf-8")).get("format_pending") or {}
+    return {(body, g): str(reason) for body, grades in raw.items() for g, reason in grades.items()}
+
+
+def exam_status(formats: Dict[Tuple[str, str], "ExamFormat"], pending: Dict[Tuple[str, str], str],
+                body: str, grade: str) -> str:
+    """'available' | 'format_pending' | 'unsupported'."""
+    if (body, grade) in formats:
+        return "available"
+    if (body, grade) in pending:
+        return "format_pending"
+    return "unsupported"
+
+
 def load_formats(path: Path = DATA / "exam_formats.json") -> Dict[Tuple[str, str], ExamFormat]:
     raw = json.loads(path.read_text(encoding="utf-8"))["bodies"]
     out: Dict[Tuple[str, str], ExamFormat] = {}
@@ -56,4 +75,7 @@ def load_formats(path: Path = DATA / "exam_formats.json") -> Dict[Tuple[str, str
             if not 0 < f.pass_score <= f.total_score:
                 raise FormatError(f"{body}/{grade}: pass_score outside 1..{f.total_score}")
             out[(body, grade)] = f
+    overlap = set(out) & set(load_pending(path))
+    if overlap:
+        raise FormatError(f"grades both formatted and format_pending: {sorted(overlap)}")
     return out

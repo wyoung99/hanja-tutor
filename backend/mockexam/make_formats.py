@@ -22,10 +22,18 @@ KOREA = {"8": g(50, 35, eh(50)), "7II": g(50, 42, eh(60)), "7": g(50, 49, eh(70)
 DAEGEOM = {"8": g(40, 35, eh(50)), "7": g(40, 42, eh(60)), "6": g(40, 49, eh(70, 10)),
            "5": g(40, 56, eh(80, 16, 15)), "4": g(40, 63, eh(90, 10, 25)), "3": g(40, 70, eh(100, 10, 30))}
 
+# Supported grades whose official exam format has NOT been obtained. They get learning features only;
+# starting a mock exam is blocked with "형식 준비 중". Never invent a format for these: add one here only
+# after confirming the body's published notice, and remove the grade from FORMAT_PENDING at the same time.
+PENDING_REASON = "공식 출제 형식(문항 수·유형·시간·합격선)을 확보하지 못함 — 형식 준비 중"
+FORMAT_PENDING = {"daegeom": {g: PENDING_REASON for g in ("준5", "준4", "준3")}}
+
 OUT = {"_comment": "Per body/grade exam format; independent config, grades are NOT mapped across bodies. "
                    "verified=false until an operator confirms each grade against the body's published 출제기준. "
-                   "pass_score is in points (1 point per question).",
-       "bodies": {"korea_eomunhoe": KOREA, "daegeom": DAEGEOM}}
+                   "pass_score is in points (1 point per question). format_pending lists supported grades "
+                   "with no known official format (mock exam blocked, learning features only).",
+       "bodies": {"korea_eomunhoe": KOREA, "daegeom": DAEGEOM},
+       "format_pending": FORMAT_PENDING}
 
 if __name__ == "__main__":
     p = Path(__file__).resolve().parents[2] / "data" / "exam_formats.json"

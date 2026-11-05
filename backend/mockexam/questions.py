@@ -1,7 +1,7 @@
 """Question model, DB-grounded generation, and DB cross-check (verify) used as the pre-exam gate.
 
 Types: eum (한자->음), hun_eum (한자->훈음), hun_to_hanja (훈음->한자 선택),
-writing (훈음 -> 빈 칸에 직접 쓰기; only chars whose stroke data is reviewed + matches the Korean reference).
+writing (훈음 -> 빈 칸에 직접 쓰기; only chars with stroke data that are not flagged exclude_from_grading).
 """
 from __future__ import annotations
 
@@ -203,7 +203,7 @@ def generate_questions(
     writing_need = sum(t.count for t in fmt.types if t.type == "writing")
     if len(wset) < writing_need and not allow_substitute_writing:
         raise ExamUnavailable(
-            f"writing needs {writing_need} reviewed chars in the pool, only {len(wset)} available")
+            f"writing needs {writing_need} gradable (stroke-data) chars in the pool, only {len(wset)} available")
     order = sorted(by_char)
     rng.shuffle(order)
     w_order = list(wset)
@@ -221,7 +221,7 @@ def generate_questions(
             else:
                 char = seq[pos % len(seq)]
                 pos += 1
-                if qtype == "writing":  # opt-in substitution when too few reviewed chars
+                if qtype == "writing":  # opt-in substitution when too few gradable chars
                     qtype = "hun_to_hanja"
             n += 1
             q = build_question(f"q{n}", qtype, spec.points, by_char[char], pool, rng)

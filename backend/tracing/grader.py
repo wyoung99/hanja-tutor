@@ -11,7 +11,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
-from typing import Callable, Dict, List, Optional, Sequence, Set
+import unicodedata
+from typing import Callable, Dict, List, Mapping, Optional, Sequence, Set
 
 from .strokes import Point, StrokeData, is_gradable
 
@@ -170,10 +171,14 @@ class TracingProgress:
         return sum(1 for c in self.passed_days if self.completed(c))
 
 
-def start_attempt(char: str, db: Dict[str, StrokeData], ref: Dict[str, StrokeData],
+def start_attempt(char: str, db: Mapping[str, StrokeData],
                   tol: GradeTolerance = GradeTolerance()) -> Dict[str, object]:
-    """Gate: gradable chars get a grading attempt; others get animation only."""
-    if is_gradable(char, db, ref):
-        return {"mode": "graded", "attempt": TracingAttempt(db[char], tol)}
-    d = db.get(char)
-    return {"mode": "animation_only", "strokes": d.strokes if d else ()}
+    """Gate: gradable chars get a grading attempt; flagged chars get animation only; chars without
+    stroke data are not tracing targets ("unavailable")."""
+    c = unicodedata.normalize("NFC", char)
+    if is_gradable(c, db):
+        return {"mode": "graded", "attempt": TracingAttempt(db[c], tol)}
+    d = db.get(c)
+    if d is None:
+        return {"mode": "unavailable", "strokes": ()}
+    return {"mode": "animation_only", "strokes": d.strokes}

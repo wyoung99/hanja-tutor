@@ -26,7 +26,7 @@ BODY, GRADE = "korea_eomunhoe", "8"
 def world(can_push=lambda pid: True):
     bill, bot, usage, p, a, b, clock, gw, mail, push = billing_setup()
     pool = lambda bd, g: cumulative_pool(bd, g, BODIES[bd], ASSIGN, HANJA)  # noqa: E731
-    exam = MockExamService(FORMATS, pool, SDB, SDB, clock=clock)
+    exam = MockExamService(FORMATS, pool, SDB, clock=clock)
     chars = sorted(ASSIGN[(BODY, GRADE)])[:20]
     planners = {c.id: StudyPlanner([PlanHanja(ch, i + 1) for i, ch in enumerate(chars)], clock,
                                    start_date=clock().date()) for c in (a, b)}

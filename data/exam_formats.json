@@ -1,5 +1,5 @@
 {
- "_comment": "Per body/grade exam format; independent config, grades are NOT mapped across bodies. verified=false until an operator confirms each grade against the body's published 출제기준. pass_score is in points (1 point per question).",
+ "_comment": "Per body/grade exam format; independent config, grades are NOT mapped across bodies. verified=false until an operator confirms each grade against the body's published 출제기준. pass_score is in points (1 point per question). format_pending lists supported grades with no known official format (mock exam blocked, learning features only).",
  "bodies": {
   "korea_eomunhoe": {
    "8": {
@@ -344,6 +344,13 @@
     ],
     "verified": false
    }
+  }
+ },
+ "format_pending": {
+  "daegeom": {
+   "준5": "공식 출제 형식(문항 수·유형·시간·합격선)을 확보하지 못함 — 형식 준비 중",
+   "준4": "공식 출제 형식(문항 수·유형·시간·합격선)을 확보하지 못함 — 형식 준비 중",
+   "준3": "공식 출제 형식(문항 수·유형·시간·합격선)을 확보하지 못함 — 형식 준비 중"
   }
  }
 }

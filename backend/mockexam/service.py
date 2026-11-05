@@ -16,7 +16,7 @@ from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 from tracing.grader import GradeTolerance, grade_stroke
 from tracing.strokes import StrokeData, gradable_chars
 
-from .formats import ExamFormat, TYPES
+from .formats import FORMAT_PENDING_MESSAGE, ExamFormat, TYPES
 from .questions import ExamUnavailable, Hanja, Question, generate_questions
 
 KST = timezone(timedelta(hours=9))
@@ -28,6 +28,10 @@ class ExamError(Exception):
 
 class ExamClosed(ExamError):
     """Exam already submitted or timed out."""
+
+
+class FormatPending(ExamError):
+    """Supported grade without a confirmed official format: mock exam blocked ("형식 준비 중")."""
 
 
 class ActiveExamError(ExamError):
@@ -68,15 +72,16 @@ class MockExamService:
         formats: Mapping[Tuple[str, str], ExamFormat],
         pool_for: Callable[[str, str], List[Hanja]],
         stroke_db: Mapping[str, StrokeData],
-        stroke_ref: Mapping[str, StrokeData],
         clock: Callable[[], datetime] = lambda: datetime.now(KST),
         charge: Optional[Callable[[str], None]] = None,
         on_wrong_char: Optional[Callable[[str, str], None]] = None,  # (profile_id, char) -> review list
         tol: GradeTolerance = GradeTolerance(),
         allow_substitute_writing: bool = False,
+        pending: Optional[Mapping[Tuple[str, str], str]] = None,  # formats.load_pending()
     ) -> None:
+        self.pending = dict(pending or {})
         self.formats, self.pool_for, self.clock = formats, pool_for, clock
-        self.stroke_db, self.stroke_ref = dict(stroke_db), dict(stroke_ref)
+        self.stroke_db = dict(stroke_db)
         self.charge, self.on_wrong_char, self.tol = charge, on_wrong_char, tol
         self.allow_substitute_writing = allow_substitute_writing
         self.exams: Dict[str, Exam] = {}
@@ -93,6 +98,8 @@ class MockExamService:
     def start(self, profile_id: str, body: str, grade: str, seed: Optional[int] = None) -> Exam:
         fmt = self.formats.get((body, grade))
         if fmt is None:
+            if (body, grade) in self.pending:
+                raise FormatPending(f"{body}/{grade}: {FORMAT_PENDING_MESSAGE}")
             raise ExamError(f"unsupported exam {body}/{grade}")
         active = self._active(profile_id)
         if active is not None:  # resume: no new questions, no deduction
@@ -100,7 +107,7 @@ class MockExamService:
                 raise ActiveExamError("finish the exam in progress first")
             return active
         pool = self.pool_for(body, grade)
-        wchars = gradable_chars(self.stroke_db, self.stroke_ref) if fmt.has_writing else []
+        wchars = gradable_chars(self.stroke_db) if fmt.has_writing else []
         qs = generate_questions(fmt, pool, wchars, random.Random(seed), allow_substitute_writing=self.allow_substitute_writing)
         if self.charge:
             self.charge(profile_id)  # may raise (limit reached) -> nothing created

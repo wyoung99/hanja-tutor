@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from mockexam import formats as F  # noqa: E402
 from mockexam import questions as Q  # noqa: E402
-from mockexam.service import MockExamService, ActiveExamError, ExamClosed, cumulative_pool  # noqa: E402
+from mockexam.service import MockExamService, ActiveExamError, ExamClosed, FormatPending, cumulative_pool  # noqa: E402
 from hanja_db.verify import load_exam_bodies  # noqa: E402
 from study.planner import StudyPlanner, PlanHanja, REASON_MOCK_WRONG  # noqa: E402
 from tracing.strokes import StrokeData  # noqa: E402
@@ -21,6 +21,7 @@ TOP = ((200, 300), (500, 300), (800, 300))
 BOT = ((100, 700), (500, 700), (900, 700))
 
 FORMATS = F.load_formats()
+PENDING = F.load_pending()
 BODIES = load_exam_bodies()
 PER_GRADE = 60
 
@@ -41,7 +42,7 @@ def synthetic_world():
 
 
 HANJA, ASSIGN = synthetic_world()
-SDB = {c: StrokeData(c, (TOP, BOT), True) for c in HANJA}
+SDB = {c: StrokeData(c, (TOP, BOT)) for c in HANJA}
 
 
 class Clock:
@@ -55,7 +56,8 @@ class Clock:
 def make(clock=None, sdb=SDB, **kw):
     clock = clock or Clock()
     pool = lambda b, g: cumulative_pool(b, g, BODIES[b], ASSIGN, HANJA)  # noqa: E731
-    return MockExamService(FORMATS, pool, sdb, SDB, clock=clock, **kw), clock
+    kw.setdefault("pending", PENDING)
+    return MockExamService(FORMATS, pool, sdb, clock=clock, **kw), clock
 
 
 def correct_answers(exam):
@@ -63,12 +65,35 @@ def correct_answers(exam):
 
 
 def test_formats_cover_every_supported_grade_independently():
-    for body, grades in BODIES.items():
-        for g in grades:
-            f = FORMATS[(body, g)]
-            assert f.question_count == f.total_score and f.minutes > 0 and 0 < f.pass_score <= f.total_score
-    assert set(FORMATS) == {(b, g) for b, gs in BODIES.items() for g in gs}
+    """Every supported grade has a format OR is explicitly declared format_pending (never both, never neither)."""
+    supported = {(b, g) for b, gs in BODIES.items() for g in gs}
+    assert set(FORMATS) | set(PENDING) == supported
+    assert set(FORMATS) & set(PENDING) == set()
+    for key in FORMATS:
+        f = FORMATS[key]
+        assert f.question_count == f.total_score and f.minutes > 0 and 0 < f.pass_score <= f.total_score
+    for key, reason in PENDING.items():
+        assert reason.strip() and F.exam_status(FORMATS, PENDING, *key) == "format_pending"
     assert not FORMATS[("korea_eomunhoe", "8")].has_writing
+
+
+def test_jun_grades_have_no_invented_format():
+    # decision 2026-11-05: no official format known for 대한검정회 준5·준4·준3
+    for g in ("준5", "준4", "준3"):
+        assert ("daegeom", g) not in FORMATS and ("daegeom", g) in PENDING
+    assert F.exam_status(FORMATS, PENDING, "daegeom", "5") == "available"
+    assert F.exam_status(FORMATS, PENDING, "daegeom", "2") == "unsupported"
+
+
+@pytest.mark.parametrize("grade", ["준5", "준4", "준3"])
+def test_mock_exam_start_blocked_for_format_pending_grade(grade):
+    charged = []
+    svc, _ = make(charge=charged.append)
+    with pytest.raises(FormatPending, match="형식 준비 중"):
+        svc.start("p1", "daegeom", grade, seed=1)
+    assert svc.exams == {} and charged == []  # nothing created, nothing deducted
+    # learning pool for the grade still exists (cumulative, same body only)
+    assert len(cumulative_pool("daegeom", grade, BODIES["daegeom"], ASSIGN, HANJA)) > 0
 
 
 @pytest.mark.parametrize("body,grade", sorted(FORMATS))
@@ -182,12 +207,16 @@ def test_charge_failure_creates_no_exam():
     assert svc.exams == {}
 
 
-def test_writing_is_blank_cell_stroke_graded_and_only_for_reviewed_chars():
-    unrev = {c: StrokeData(c, (TOP, BOT), c in list(HANJA)[::2]) for c in HANJA}  # half unreviewed
-    svc, _ = make(sdb=unrev)
+def test_writing_is_blank_cell_stroke_graded_and_only_for_gradable_chars():
+    half = list(HANJA)[::2]
+    # every other char lacks stroke data; one char with data is flagged exclude_from_grading
+    sdb = {c: StrokeData(c, (TOP, BOT)) for c in half}
+    flagged = half[0]
+    sdb[flagged] = StrokeData(flagged, (TOP, BOT), exclude_from_grading=True)
+    svc, _ = make(sdb=sdb)
     ex = svc.start("p1", "korea_eomunhoe", "4", seed=7)
     w = [q for q in ex.questions if q.type == "writing"]
-    assert len(w) == 40 and all(unrev[q.char].reviewed for q in w)
+    assert len(w) == 40 and all(q.char in sdb and not sdb[q.char].exclude_from_grading for q in w)
     assert all(q.options == () and "직접 쓰세요" in q.prompt for q in w)
     q0 = w[0]
     svc.answer(ex.exam_id, q0.id, [list(TOP), list(BOT)])  # right
@@ -199,9 +228,8 @@ def test_writing_is_blank_cell_stroke_graded_and_only_for_reviewed_chars():
     assert r["by_type"]["writing"]["correct"] == 1
 
 
-def test_no_reviewed_chars_blocks_writing_exam_but_not_nonwriting():
-    none_reviewed = {c: StrokeData(c, (TOP, BOT), False) for c in HANJA}
-    svc, _ = make(sdb=none_reviewed)
+def test_no_stroke_data_blocks_writing_exam_but_not_nonwriting():
+    svc, _ = make(sdb={})
     with pytest.raises(Q.ExamUnavailable):
         svc.start("p1", "korea_eomunhoe", "4")
     assert svc.exams == {}
