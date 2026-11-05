@@ -85,7 +85,7 @@ class LifecycleService:
     # ---- child data ---------------------------------------------------------
     def _purge_child_data(self, child_id: str) -> None:
         conv = self.conversations
-        for m in [m for m in list(conv.meta.rows.values()) if m.child_id == child_id]:
+        for m in conv.meta.for_child(child_id):
             conv._purge(m.thread_id)
         # checkpoints that lost their metadata row must not survive either
         chat = conv.chatbot
@@ -135,16 +135,16 @@ class LifecycleService:
         conv = self.conversations
         child_ids = {c.id for c in self.accounts.dormant_children.values() if c.parent_id == parent_id}
         vault = {}
-        for m in [m for m in list(conv.meta.rows.values()) if m.child_id in child_ids]:
+        for m in [m for m in conv.meta.all() if m.child_id in child_ids]:
             vault[m.thread_id] = (m, conv.checkpointer.load(m.thread_id))
             conv.checkpointer.delete_thread(m.thread_id)
-            conv.meta.rows.pop(m.thread_id, None)
+            conv.meta.delete(m.thread_id)
         self._dormant_vault[parent_id] = vault
 
     def _restore_vault(self, parent_id: str) -> None:
         conv = self.conversations
         for tid, (meta, msgs) in self._dormant_vault.pop(parent_id, {}).items():
-            conv.meta.rows[tid] = meta
+            conv.meta.put(meta)
             conv.checkpointer.save(tid, msgs)
 
     def run_dormancy_sweep(self) -> Dict[str, List[str]]:

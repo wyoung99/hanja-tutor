@@ -74,8 +74,12 @@ class StudyPlanner:
         clock: Callable[[], datetime] = lambda: datetime.now(KST),
         exam_date: Optional[date] = None,
         start_date: Optional[date] = None,
+        review_chars: Optional[Iterable[str]] = None,
     ) -> None:
         self.assigned: Dict[str, PlanHanja] = {h.char: h for h in assigned}
+        # Chars that may enter the review list besides the target grade's own (e.g. the cumulative
+        # lower-grade chars a mock exam also asks). New-hanja planning still uses `assigned` only.
+        self.reviewable: set = set(self.assigned) | set(review_chars or ())
         self.clock = clock
         self.exam_date = exam_date
         self.start_date = start_date or kst_today(clock)
@@ -187,8 +191,8 @@ class StudyPlanner:
         New item -> first interval (1 day). Already tracked -> treated like a miss
         (one stage back); a mastered item re-enters at the first stage.
         """
-        if char not in self.assigned:
-            raise PlanError(f"{char!r} is not in the assigned set")
+        if char not in self.reviewable:
+            raise PlanError(f"{char!r} is not in the reviewable set")
         if reason not in REVIEW_REASONS:
             raise PlanError(f"unknown review reason {reason!r}")
         today = kst_today(self.clock)

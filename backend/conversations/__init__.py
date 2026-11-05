@@ -5,10 +5,11 @@ from .service import (
     InMemoryCheckpointer,
     InMemoryThreadMeta,
     PostgresCheckpointer,
+    PostgresThreadMeta,
     ThreadMeta,
 )
 
 __all__ = [
     "MAX_THREADS_PER_CHILD", "ConversationService", "InMemoryCheckpointer",
-    "InMemoryThreadMeta", "PostgresCheckpointer", "ThreadMeta",
+    "InMemoryThreadMeta", "PostgresCheckpointer", "PostgresThreadMeta", "ThreadMeta",
 ]
