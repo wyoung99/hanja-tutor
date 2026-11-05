@@ -1,11 +1,41 @@
 {
-  "generated_at": "2026-11-05T05:20:49.837143+00:00",
+  "generated_at": "2026-11-05T08:54:01.053791+00:00",
   "sheet": "reports\\exam_sample_review.csv",
-  "sample_size": 360,
+  "sample_size": 216,
   "by_source": {
-    "db": 360,
+    "db": 216,
     "ai": 0
   },
+  "by_body": {
+    "daegeom": 108,
+    "korea_eomunhoe": 108
+  },
+  "by_type": {
+    "eum": 48,
+    "hun_eum": 80,
+    "hun_to_hanja": 68,
+    "writing": 11,
+    "busu": 2,
+    "pilsun": 7
+  },
+  "by_official_type": {
+    "baneuieo": 9,
+    "busu": 2,
+    "dokeum": 25,
+    "dongeuieo": 5,
+    "dongeumieuieo": 5,
+    "eum": 22,
+    "hanja_sseugi": 11,
+    "hun_eum": 50,
+    "hun_to_hanja": 36,
+    "hunum": 22,
+    "jangdaneum": 1,
+    "pilsun": 7,
+    "tteutpuri": 8,
+    "wanseong": 9,
+    "yakja": 4
+  },
+  "substituted_items": 66,
   "automated_db_check": {
     "failed": 0,
     "rate": 0.0,
