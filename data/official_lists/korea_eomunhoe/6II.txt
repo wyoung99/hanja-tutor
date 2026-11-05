@@ -1,0 +1,14 @@
+# 한국어문회 6II급 신습(新習) 배정한자 75자 (이 급수에서 새로 배정된 한자)
+# Source: (사)한국어문회 급수배정 https://www.hanja.re.kr/kccpt/exam/levelConfirm.do
+#   file "배정한자6급II.hwp" via POST https://www.hanja.re.kr/file/downloadDoc.do (folder_name=levelConfirm)
+# Retrieved: 2026-11-05
+# Derivation: 해당 급수 HWP의 읽기配定漢字(누적) 목록 - 직전 급수 HWP의 읽기配定漢字(누적) 목록. 코드포인트는 원문 그대로(호환한자 포함).
+# License: (사)한국어문회 저작물. 이용약관 제14조: 사전승인 없이 복제/배포 금지. 재배포 전 허가 필요 (data/SOURCES.md).
+各 角 界 計 高 公 共 功 果 科
+光 球 今 急 短 堂 代 對 圖 讀
+童 等 樂 利 理 明 聞 半 反 班
+發 放 部 分 社 書 線 雪 成 省
+消 術 始 信 新 神 身 弱 藥 業
+勇 用 運 音 飮 意 作 昨 才 戰
+庭 第 題 注 集 窓 淸 體 表 風
+幸 現 形 和 會

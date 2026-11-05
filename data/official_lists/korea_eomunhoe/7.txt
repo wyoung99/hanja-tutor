@@ -1,0 +1,11 @@
+# 한국어문회 7급 신습(新習) 배정한자 50자 (이 급수에서 새로 배정된 한자)
+# Source: (사)한국어문회 급수배정 https://www.hanja.re.kr/kccpt/exam/levelConfirm.do
+#   file "배정한자7급.hwp" via POST https://www.hanja.re.kr/file/downloadDoc.do (folder_name=levelConfirm)
+# Retrieved: 2026-11-05
+# Derivation: 해당 급수 HWP의 읽기配定漢字(누적) 목록 - 직전 급수 HWP의 읽기配定漢字(누적) 목록. 코드포인트는 원문 그대로(호환한자 포함).
+# License: (사)한국어문회 저작물. 이용약관 제14조: 사전승인 없이 복제/배포 금지. 재배포 전 허가 필요 (data/SOURCES.md).
+歌 口 旗 冬 同 洞 登 來 老 里
+林 面 命 問 文 百 夫 算 色 夕
+少 所 數 植 心 語 然 有 育 邑
+入 字 祖 主 住 重 地 紙 千 天
+川 草 村 秋 春 出 便 夏 花 休

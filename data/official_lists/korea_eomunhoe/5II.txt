@@ -1,0 +1,16 @@
+# 한국어문회 5II급 신습(新習) 배정한자 100자 (이 급수에서 새로 배정된 한자)
+# Source: (사)한국어문회 급수배정 https://www.hanja.re.kr/kccpt/exam/levelConfirm.do
+#   file "배정한자5급II.hwp" via POST https://www.hanja.re.kr/file/downloadDoc.do (folder_name=levelConfirm)
+# Retrieved: 2026-11-05
+# Derivation: 해당 급수 HWP의 읽기配定漢字(누적) 목록 - 직전 급수 HWP의 읽기配定漢字(누적) 목록. 코드포인트는 원문 그대로(호환한자 포함).
+# License: (사)한국어문회 저작물. 이용약관 제14조: 사전승인 없이 복제/배포 금지. 재배포 전 허가 필요 (data/SOURCES.md).
+價 客 格 見 決 結 敬 告 課 過
+觀 關 廣 具 舊 局 基 己 念 能
+團 當 德 到 獨 朗 良 旅 歷 練
+勞 流 類 陸 望 法 變 兵 福 奉
+仕 史 士 産 商 相 仙 鮮 說 性
+歲 洗 束 首 宿 順 識 臣 實 兒
+惡 約 養 要 友 雨 雲 元 偉 以
+任 材 財 的 傳 典 展 切 節 店
+情 調 卒 種 州 週 知 質 着 參
+責 充 宅 品 必 筆 害 化 效 凶

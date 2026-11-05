@@ -1,0 +1,7 @@
+{
+  "_comment": "Exam bodies and supported grades. Grades are NOT mapped across bodies. Per-grade assigned hanja live in data/hanja_db/assignments.csv; official public lists live in data/official_lists/<body>/<grade>.txt.",
+  "bodies": {
+    "korea_eomunhoe": {"name": "한국어문회", "grades": ["8", "7II", "7", "6II", "6", "5II", "5", "4II", "4"]},
+    "daegeom": {"name": "대한검정회", "grades": ["8", "7", "6", "5", "4", "3"]}
+  }
+}

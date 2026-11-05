@@ -1,0 +1,9 @@
+# 대한검정회 8급 신출한자 30자 (이 급수에서 새로 선정된 한자)
+# Source: (사)대한민국한자교육연구회/대한검정회 등급별 선정한자 https://www.hanja.ne.kr/jupsu/jupsu07_01.asp
+#   file "등급별 선정한자(8급 ~ 사범)" https://www.hanja.ne.kr/board/board/abc_down.asp?tb=inno_12&num=15&down=1 (HWP)
+# Retrieved: 2026-11-05
+# Derivation: 해당 급수 "총 N자 중 신출 M자" 절의 한자 그대로. 코드포인트는 원문 그대로(호환한자 포함).
+# License: 대한검정회 저작물. 이용약관 제15조: 사전승낙 없이 영리목적 복제/배포 금지. 재배포 전 허가 필요 (data/SOURCES.md).
+九 金 南 男 女 東 六 母 木 門
+父 北 四 三 西 水 十 五 月 二
+人 日 一 子 弟 七 土 八 兄 火

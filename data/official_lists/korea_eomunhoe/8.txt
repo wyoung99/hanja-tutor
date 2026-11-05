@@ -1,0 +1,11 @@
+# 한국어문회 8급 신습(新習) 배정한자 50자 (이 급수에서 새로 배정된 한자)
+# Source: (사)한국어문회 급수배정 https://www.hanja.re.kr/kccpt/exam/levelConfirm.do
+#   file "배정한자8급.hwp" via POST https://www.hanja.re.kr/file/downloadDoc.do (folder_name=levelConfirm)
+# Retrieved: 2026-11-05
+# Derivation: 해당 급수 HWP의 읽기配定漢字(누적) 목록 - 직전 급수 HWP의 읽기配定漢字(누적) 목록. 코드포인트는 원문 그대로(호환한자 포함).
+# License: (사)한국어문회 저작물. 이용약관 제14조: 사전승인 없이 복제/배포 금지. 재배포 전 허가 필요 (data/SOURCES.md).
+敎 校 九 國 軍 金 南 女 年 大
+東 六 萬 母 木 門 民 白 父 北
+四 山 三 生 西 先 小 水 室 十
+五 王 外 月 二 人 一 日 長 弟
+中 靑 寸 七 土 八 學 韓 兄 火
