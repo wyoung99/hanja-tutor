@@ -1,12 +1,31 @@
 import { expect, Page, test } from "@playwright/test";
 
-async function draw(page: Page, pts: [number, number][]) {
+type Pt = [number, number];
+
+async function draw(page: Page, pts: Pt[]) {
   const box = (await page.getByTestId("stroke-pad").boundingBox())!;
-  const at = ([x, y]: [number, number]) => [box.x + (x / 1000) * box.width, box.y + (y / 1000) * box.height] as const;
+  const at = ([x, y]: Pt) => [box.x + (x / 1000) * box.width, box.y + (y / 1000) * box.height] as const;
   await page.mouse.move(...at(pts[0]));
   await page.mouse.down();
   for (const p of pts.slice(1)) await page.mouse.move(...at(p), { steps: 6 });
   await page.mouse.up();
+}
+
+/** Real hanzi-writer medians for `ch` (same data the backend grades against), via the app's /api proxy. */
+async function medians(page: Page, ch: string): Promise<Pt[][]> {
+  const r = await page.request.get(`/api/strokes/${encodeURIComponent(ch)}`);
+  expect(r.ok()).toBeTruthy();
+  const body = await r.json();
+  expect(body.mode).toBe("graded");
+  return body.strokes;
+}
+
+async function signup(page: Page, email: string) {
+  await page.goto("/");
+  await page.getByTestId("email").fill(email);
+  for (const t of ["agree-terms", "agree-privacy", "agree-guardian"]) await page.getByTestId(t).check();
+  await page.getByTestId("signup").click();
+  await expect(page.getByTestId("nick")).toBeVisible();
 }
 
 test("installable: manifest + service worker", async ({ page, request }) => {
@@ -37,7 +56,9 @@ test("installable: manifest + service worker", async ({ page, request }) => {
   await page.context().setOffline(false);
 });
 
-test("full journey: signup → child → today → tracing → mock exam → chatbot → report → subscribe → refund request", async ({ page }) => {
+// AC17: 가입·동의 → 자녀 프로필 → 오늘의 한자 → 따라쓰기 → 모의고사 → 챗봇 → 리포트.
+// Subscription payment/refund are implement-only (AC14/AC15 verification excluded) and not part of this E2E.
+test("full journey: signup → child → today → tracing → mock exam → chatbot → report", async ({ page }) => {
   await page.goto("/");
 
   // 가입·동의 (consent is required)
@@ -58,7 +79,7 @@ test("full journey: signup → child → today → tracing → mock exam → cha
   await page.getByTestId("add-child").click();
   await expect(page.getByTestId("child-card")).toHaveCount(1);
 
-  // 아이 모드: 오늘의 한자 + 따라쓰기
+  // 아이 모드: 오늘의 한자 (실제 DB 훈·음) + 따라쓰기 (실제 획순 데이터)
   await page.getByTestId("enter-별이").click();
   await page.getByTestId("child-pin").fill("1234");
   await page.getByTestId("child-unlock").click();
@@ -67,18 +88,23 @@ test("full journey: signup → child → today → tracing → mock exam → cha
   const n = await cards.count();
   expect(n).toBeGreaterThanOrEqual(3);
   expect(n).toBeLessThanOrEqual(15);
-  await cards.first().getByRole("button", { name: "따라 쓰기" }).click();
+  await expect(page.getByTestId("reading").first()).not.toHaveText(/^[훈음]\d+/);
+  const trace = page.locator('[data-testid^="trace-"]').first();
+  const ch = (await trace.getAttribute("data-testid"))!.slice("trace-".length);
+  const strokes = await medians(page, ch);
+  expect(strokes.length).toBeGreaterThan(0);
+  await trace.click();
   await expect(page.getByTestId("stroke-pad")).toBeVisible();
-  await draw(page, [[100, 300], [500, 300], [900, 300]]);   // stroke 1 (roughly TOP)
-  await draw(page, [[100, 700], [500, 700], [900, 700]]);   // stroke 2 (BOT)
+  for (const s of strokes) await draw(page, s); // follow each real median in order
   await expect(page.getByTestId("trace-msg")).toContainText("통과");
   await page.getByTestId("trace-finish").click();
-  await expect(page.locator('[data-testid^="done-"]')).toHaveCount(1);
+  await expect(page.getByTestId(`done-${ch}`)).toHaveCount(1);
 
   // 모의고사 (실전형): 1회 응시 후 주간 한도 안내(구독 언급 없음)
   await page.getByTestId("tab-exam").click();
   await page.getByTestId("exam-start").click();
   await expect(page.getByTestId("exam-question").first()).toBeVisible();
+  await expect(page.getByTestId("exam-question")).toHaveCount(50);
   await page.locator('[data-testid="exam-question"] input[type="radio"]').first().check();
   await page.getByTestId("exam-submit").click();
   await expect(page.getByTestId("exam-score")).toContainText("점");
@@ -101,40 +127,21 @@ test("full journey: signup → child → today → tracing → mock exam → cha
   await expect(page.getByTestId("basic-report")).toContainText("학습 시간");
   await page.getByTestId("detail-report").click();
   await expect(page.getByTestId("detail-msg")).toContainText("구독 전용");
-
-  // 구독 결제 (표시 가격 → 결제)
-  await page.getByTestId("tab-billing").click();
-  await expect(page.getByTestId("price-monthly")).toContainText("원");
-  await expect(page.getByTestId("price-yearly")).toContainText("원");
-  await page.getByTestId("pay-monthly").click();
-  await expect(page.getByTestId("sub-status")).toContainText("active");
-
-  // 구독 후 상세 리포트 열람 = 유료 사용 → 환불 자동 거절 → 운영자 검토 요청
-  await page.getByTestId("tab-report").click();
-  await page.getByTestId("detail-report").click();
-  await expect(page.getByTestId("detail-body")).toBeVisible();
-  await page.getByTestId("tab-billing").click();
-  await page.getByTestId("refund").click();
-  await expect(page.getByTestId("refund-status")).toHaveText("auto_rejected");
-  await expect(page.getByTestId("refund-reason")).toBeVisible();
-  await page.getByTestId("refund-review").click();
-  await expect(page.getByTestId("refund-status")).toHaveText("review_requested");
-
-  // 운영자 화면
-  await page.goto("/admin");
-  await page.getByPlaceholder("관리자 토큰").fill("e2e-admin");
-  await page.getByRole("button", { name: "불러오기" }).click();
-  await expect(page.getByRole("button", { name: "승인" })).toBeVisible();
 });
 
-test("refund auto-approved when no paid use within 7 days", async ({ page }) => {
-  await page.goto("/");
-  await page.getByTestId("email").fill("p2@example.com");
-  for (const t of ["agree-terms", "agree-privacy", "agree-guardian"]) await page.getByTestId(t).check();
-  await page.getByTestId("signup").click();
-  await page.getByTestId("tab-billing").click();
-  await page.getByTestId("pay-yearly").click();
-  await expect(page.getByTestId("sub-status")).toContainText("active");
-  await page.getByTestId("refund").click();
-  await expect(page.getByTestId("refund-status")).toHaveText("auto_approved");
+test("준급: learning works, mock exam start is blocked as 형식 준비 중", async ({ page }) => {
+  await signup(page, "jun@example.com");
+  await page.getByTestId("nick").fill("준이");
+  await page.getByTestId("pin").fill("1234");
+  await page.getByTestId("body").selectOption("daegeom");
+  await page.getByTestId("grade").selectOption("준5");
+  await expect(page.getByTestId("grade-note")).toBeVisible();
+  await page.getByTestId("add-child").click();
+  await page.getByTestId("enter-준이").click();
+  await page.getByTestId("child-pin").fill("1234");
+  await page.getByTestId("child-unlock").click();
+  await expect(page.getByTestId("today-card").first()).toBeVisible();
+  await page.getByTestId("tab-exam").click();
+  await page.getByTestId("exam-start").click();
+  await expect(page.getByTestId("exam-msg")).toContainText("형식 준비 중");
 });

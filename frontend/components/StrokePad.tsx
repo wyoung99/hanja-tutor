@@ -1,18 +1,51 @@
 "use client";
-import { useRef } from "react";
-import { normalize, simplify, clampPoint, type Pt } from "../lib/strokes";
+import { useCallback, useEffect, useRef } from "react";
+import { normalize, simplify, clampPoint, toCanvas, type Pt } from "../lib/strokes";
+
+const SIZE = 600; // canvas backing pixels; strokes are exchanged in the backend's 0..1000 space
+
+type Props = {
+  onStroke: (s: Pt[]) => void;
+  disabled?: boolean;
+  /** Reference medians (hanzi-writer data) drawn faintly as the tracing guide. */
+  guide?: Pt[][];
+  /** A stroke to emphasise, e.g. the correct stroke revealed after 3 errors. */
+  highlight?: Pt[] | null;
+};
 
 /** Square drawing pad; each finished stroke is reported in the backend's 0..1000 space. */
-export default function StrokePad({ onStroke, disabled }: { onStroke: (s: Pt[]) => void; disabled?: boolean }) {
+export default function StrokePad({ onStroke, disabled, guide, highlight }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
   const pts = useRef<{ x: number; y: number }[]>([]);
   const down = useRef(false);
+
+  const line = (g: CanvasRenderingContext2D, p: Pt[], width: number, color: string) => {
+    g.lineWidth = width; g.lineCap = "round"; g.lineJoin = "round"; g.strokeStyle = color;
+    g.beginPath();
+    p.forEach((q, i) => {
+      const [x, y] = toCanvas(q, SIZE);
+      if (i) g.lineTo(x, y); else g.moveTo(x, y);
+    });
+    g.stroke();
+  };
+
+  const base = useCallback(() => {
+    const c = ref.current;
+    if (!c) return;
+    const g = c.getContext("2d");
+    if (!g) return;
+    g.clearRect(0, 0, SIZE, SIZE);
+    for (const s of guide ?? []) line(g, s, 28, "#e3e8e4");
+    if (highlight) line(g, highlight, 18, "#e0533d");
+  }, [guide, highlight]);
+
+  useEffect(() => { base(); }, [base]);
 
   const pos = (e: React.PointerEvent) => {
     const r = ref.current!.getBoundingClientRect();
     return clampPoint(e.clientX - r.left, e.clientY - r.top, r.width);
   };
-  const draw = () => {
+  const drawCurrent = () => {
     const c = ref.current!;
     const g = c.getContext("2d")!;
     const k = c.width / c.getBoundingClientRect().width;
@@ -21,13 +54,12 @@ export default function StrokePad({ onStroke, disabled }: { onStroke: (s: Pt[]) 
     pts.current.forEach((p, i) => (i ? g.lineTo(p.x * k, p.y * k) : g.moveTo(p.x * k, p.y * k)));
     g.stroke();
   };
-  const clear = () => ref.current!.getContext("2d")!.clearRect(0, 0, 1000, 1000);
 
   return (
     <canvas
       ref={ref}
-      width={600}
-      height={600}
+      width={SIZE}
+      height={SIZE}
       className="pad"
       data-testid="stroke-pad"
       onPointerDown={(e) => {
@@ -39,7 +71,7 @@ export default function StrokePad({ onStroke, disabled }: { onStroke: (s: Pt[]) 
       onPointerMove={(e) => {
         if (!down.current) return;
         pts.current.push(pos(e));
-        draw();
+        drawCurrent();
       }}
       onPointerUp={() => {
         if (!down.current) return;
@@ -47,7 +79,7 @@ export default function StrokePad({ onStroke, disabled }: { onStroke: (s: Pt[]) 
         const size = ref.current!.getBoundingClientRect().width;
         const s = simplify(normalize(pts.current, size));
         pts.current = [];
-        clear();
+        base();
         if (s.length >= 2) onStroke(s);
       }}
     />

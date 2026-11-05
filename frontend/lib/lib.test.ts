@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { childLockMessage, won } from "./api";
 import { manifestProblems } from "./pwa";
-import { normalize, simplify } from "./strokes";
+import { gradeLabel, normalize, simplify, toCanvas } from "./strokes";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -10,6 +10,13 @@ const manifest = JSON.parse(readFileSync(resolve(__dirname, "../public/manifest.
 describe("strokes", () => {
   it("normalizes pad pixels into the 0..1000 board", () => {
     expect(normalize([{ x: 0, y: 150 }, { x: 300, y: 300 }], 300)).toEqual([[0, 500], [1000, 1000]]);
+  });
+  it("maps board points onto the canvas (inverse of normalize)", () => {
+    expect(toCanvas([500, 250], 600)).toEqual([300, 150]);
+    expect(normalize([{ x: 300, y: 150 }], 600)).toEqual([[500, 250]]);
+  });
+  it("labels grades including 준급", () => {
+    expect(["8", "7II", "준5", "준3"].map(gradeLabel)).toEqual(["8급", "7Ⅱ급", "준5급", "준3급"]);
   });
   it("simplify keeps endpoints and drops near-duplicates", () => {
     const out = simplify([[0, 0], [1, 1], [2, 2], [500, 500], [501, 501]]);

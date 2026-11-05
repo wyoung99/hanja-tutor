@@ -23,3 +23,13 @@ export function simplify(points: Pt[], minDist = 4): Pt[] {
   if (last && out[out.length - 1] !== last) out.push(last);
   return out;
 }
+
+/** Map a backend 0..1000 point onto a square canvas of `size` pixels. */
+export function toCanvas(p: Pt, size: number): Pt {
+  return [(p[0] / BOARD) * size, (p[1] / BOARD) * size];
+}
+
+/** Grade label for the picker: "8" -> "8급", "준5" -> "준5급", "7II" -> "7Ⅱ급". */
+export function gradeLabel(g: string): string {
+  return g.replace(/II$/, "Ⅱ") + "급";
+}

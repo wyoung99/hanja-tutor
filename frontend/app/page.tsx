@@ -2,9 +2,11 @@
 import { useEffect, useState } from "react";
 import { api, ApiError, childLockMessage, session, won } from "../lib/api";
 import StrokePad from "../components/StrokePad";
-import type { Pt } from "../lib/strokes";
+import { gradeLabel, type Pt } from "../lib/strokes";
 
 type Child = { id: string; nickname: string; ai_consent: boolean; target: string[] };
+type ExamInfo = { status: "available" | "format_pending" | "unsupported"; message: string | null };
+type Catalog = { body: string; name: string; grades: string[]; exam: Record<string, ExamInfo> }[];
 type View = "auth" | "parent" | "child";
 
 export default function Home() {
@@ -69,7 +71,7 @@ function Auth({ onDone }: { onDone: () => void }) {
 // ---------------------------------------------------------------- parent
 function Parent({ onEnter }: { onEnter: (c: Child) => void }) {
   const [kids, setKids] = useState<Child[]>([]);
-  const [catalog, setCatalog] = useState<{ body: string; grades: string[] }[]>([]);
+  const [catalog, setCatalog] = useState<Catalog>([]);
   const [nick, setNick] = useState("");
   const [pin, setPin] = useState("");
   const [ai, setAi] = useState(false);
@@ -98,7 +100,9 @@ function Parent({ onEnter }: { onEnter: (c: Child) => void }) {
       setErr(e instanceof ApiError ? (e.detail?.code ?? "error") : "error");
     }
   }
-  const grades = catalog.find((c) => c.body === body)?.grades ?? [];
+  const entry = catalog.find((c) => c.body === body);
+  const grades = entry?.grades ?? [];
+  const pendingNote = entry?.exam[grade]?.status === "format_pending";
   return (
     <>
       <nav>
@@ -114,21 +118,24 @@ function Parent({ onEnter }: { onEnter: (c: Child) => void }) {
             <label>PIN (숫자 4자리)<input data-testid="pin" type="password" inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value)} /></label>
             <label>시험 기관
               <select data-testid="body" value={body} onChange={(e) => { setBody(e.target.value); setGrade(catalog.find((c) => c.body === e.target.value)?.grades[0] ?? ""); }}>
-                {catalog.map((c) => <option key={c.body} value={c.body}>{c.body === "korea_eomunhoe" ? "한국어문회" : c.body === "daegeom" ? "대한검정회" : c.body}</option>)}
+                {catalog.map((c) => <option key={c.body} value={c.body}>{c.name}</option>)}
               </select>
             </label>
             <label>급수
               <select data-testid="grade" value={grade} onChange={(e) => setGrade(e.target.value)}>
-                {grades.map((g) => <option key={g} value={g}>{g}급</option>)}
+                {grades.map((g) => (
+                  <option key={g} value={g}>{gradeLabel(g)}{entry?.exam[g]?.status === "format_pending" ? " (모의고사 형식 준비 중)" : ""}</option>
+                ))}
               </select>
             </label>
+            {pendingNote && <p data-testid="grade-note">이 급수는 공식 모의고사 형식을 확인하는 중이라 모의고사는 아직 볼 수 없어요. 오늘의 한자·복습·따라쓰기는 모두 할 수 있어요.</p>}
             <label className="check"><input type="checkbox" data-testid="ai-consent" checked={ai} onChange={(e) => setAi(e.target.checked)} />대화·학습 기록의 AI 처리에 동의합니다 (미동의 시 챗봇만 꺼져요)</label>
             <button data-testid="add-child" onClick={addChild}>프로필 만들기</button>
             {err && <p className="err" role="alert">{err}</p>}
           </section>
           {kids.map((k) => (
             <section className="card" key={k.id} data-testid="child-card">
-              <strong>{k.nickname}</strong> · {k.target.join(" ")}급
+              <strong>{k.nickname}</strong> · {catalog.find((c) => c.body === k.target[0])?.name ?? k.target[0]} {k.target[1] ? gradeLabel(k.target[1]) : ""}
               <div><button data-testid={`enter-${k.nickname}`} onClick={() => onEnter(k)}>공부 시작</button></div>
             </section>
           ))}
@@ -264,7 +271,12 @@ function loadScript(src: string) {
 }
 
 // ---------------------------------------------------------------- child
-type Card = { char: string; hun: string; eum: string; strokes: number };
+type Card = { char: string; hun: string | null; eum: string | null; reviewed: boolean; strokes: number; tracing: "graded" | "animation_only" | "unavailable" };
+
+/** 훈·음 of the child's selected exam body (empty source rows await human review). */
+function reading(c: Card) {
+  return c.hun && c.eum ? `${c.hun} ${c.eum}` : "훈·음 검수 중";
+}
 
 function ChildApp({ child, onExit }: { child: Child; onExit: () => void }) {
   const [unlocked, setUnlocked] = useState(false);
@@ -317,14 +329,16 @@ function Today({ child }: { child: Child }) {
       <h2>오늘의 한자</h2>
       {data.new.map((c) => (
         <div key={c.char} data-testid="today-card">
-          <span style={{ fontSize: 40 }}>{c.char}</span> {c.hun} {c.eum}
-          {done.includes(c.char) ? <span data-testid={`done-${c.char}`}> ✅</span> : <button data-testid={`trace-${c.char}`} onClick={() => setTracing(c)}>따라 쓰기</button>}
+          <span style={{ fontSize: 40 }}>{c.char}</span> <span data-testid="reading">{reading(c)}</span>
+          {done.includes(c.char) ? <span data-testid={`done-${c.char}`}> ✅</span>
+            : c.tracing === "unavailable" ? <small> (획순 데이터가 없어 따라쓰기는 쉬어요)</small>
+            : <button data-testid={`trace-${c.char}`} onClick={() => setTracing(c)}>따라 쓰기</button>}
         </div>
       ))}
       <h2>복습</h2>
       {data.reviews.length === 0 && <p>오늘 복습할 한자가 없어요.</p>}
       {data.reviews.map((c) => (
-        <div key={c.char}>{c.char} {c.hun} {c.eum}
+        <div key={c.char}>{c.char} {reading(c)}
           <button onClick={async () => { await api(`/children/${child.id}/reviews/${c.char}`, { body: { correct: true } }); load(); }}>알아요</button>
           <button className="secondary" onClick={async () => { await api(`/children/${child.id}/reviews/${c.char}`, { body: { correct: false } }); load(); }}>몰라요</button>
         </div>
@@ -335,19 +349,28 @@ function Today({ child }: { child: Child }) {
 
 function Tracing({ child, card, onDone }: { child: Child; card: Card; onDone: (ok: boolean) => void }) {
   const [mode, setMode] = useState<string>("");
+  const [guide, setGuide] = useState<Pt[][]>([]);
+  const [highlight, setHighlight] = useState<Pt[] | null>(null);
   const [msg, setMsg] = useState("획순대로 한 획씩 써 보세요.");
   const [result, setResult] = useState("");
-  useEffect(() => { api(`/children/${child.id}/tracing/${card.char}/start`, { body: {} }).then((r) => setMode(r.mode)); }, []);
+  useEffect(() => {
+    api(`/children/${child.id}/tracing/${card.char}/start`, { body: {} }).then((r) => { setMode(r.mode); setGuide(r.strokes ?? []); });
+  }, []);
   async function stroke(s: Pt[]) {
     const r = await api(`/children/${child.id}/tracing/${card.char}/stroke`, { body: { stroke: s } });
+    setHighlight(r.reveal_answer ? r.answer_stroke : null);
     if (r.done) { setResult(r.result); setMsg(r.result === "pass" ? "통과! 잘 썼어요 🎉" : "정답 획을 봐서 다시 도전이에요."); }
-    else setMsg(r.ok ? "좋아요! 다음 획이에요." : "다시 써 볼까요?");
+    else if (r.ok) setMsg("좋아요! 다음 획이에요.");
+    else setMsg(r.reveal_answer ? "빨간 획이 정답이에요. 따라 써 볼까요?" : "다시 써 볼까요?");
   }
   return (
     <section className="card" aria-label="따라쓰기">
       <div className="big">{card.char}</div>
-      <p>{card.hun} {card.eum}</p>
-      {mode === "animation_only" ? <p data-testid="animation-only">이 글자는 아직 애니메이션으로만 볼 수 있어요.</p> : <StrokePad onStroke={stroke} disabled={!!result} />}
+      <p>{reading(card)}</p>
+      {mode === "unavailable" && <p data-testid="tracing-unavailable">이 글자는 획순 데이터가 없어서 따라쓰기를 할 수 없어요.</p>}
+      {mode === "animation_only" && <p data-testid="animation-only">이 글자는 획순만 볼 수 있어요(채점 제외).</p>}
+      {mode === "graded" && <StrokePad onStroke={stroke} disabled={!!result} guide={guide} highlight={highlight} />}
+      {mode === "animation_only" && <StrokePad onStroke={() => undefined} disabled guide={guide} />}
       <p data-testid="trace-msg">{msg}</p>
       {result && <button data-testid="trace-finish" onClick={() => onDone(result === "pass")}>끝내기</button>}
       <button className="secondary" onClick={() => onDone(false)}>뒤로</button>
@@ -364,7 +387,11 @@ function Exam({ child }: { child: Child }) {
   async function start() {
     setMsg("");
     try { setExam(await api(`/children/${child.id}/exams`, { body: {} })); }
-    catch (e) { setMsg(e instanceof ApiError && e.status === 429 ? childLockMessage("mockexam") : "시작할 수 없어요."); }
+    catch (e) {
+      if (e instanceof ApiError && e.status === 429) setMsg(childLockMessage("mockexam"));
+      else if (e instanceof ApiError && e.detail?.code === "exam_format_pending") setMsg("이 급수의 모의고사는 형식 준비 중이에요. 오늘의 한자와 따라쓰기로 공부해요!");
+      else setMsg("시작할 수 없어요.");
+    }
   }
   async function answer(qid: string, value: unknown) {
     setAnswers((a) => ({ ...a, [qid]: value }));

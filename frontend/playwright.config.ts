@@ -12,7 +12,7 @@ export default defineConfig({
   use: { baseURL: `http://127.0.0.1:${WEB}`, serviceWorkers: "allow", trace: "retain-on-failure" },
   webServer: [
     {
-      // Staging backend: demo hanja world, fake identity/Toss/LLM, fresh in-memory state per run.
+      // Staging backend: real hanja DB + stroke data, fake identity/Toss/LLM, fresh in-memory state per run.
       command: `python -m uvicorn app.main:app --host 127.0.0.1 --port ${API}`,
       cwd: "../backend",
       url: `http://127.0.0.1:${API}/api/health`,
