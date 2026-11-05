@@ -4,8 +4,10 @@ Official list file format (data/official_lists/<body_key>/<grade>.txt):
   UTF-8 text; every CJK ideograph in the file is one assigned character;
   '#' starts a comment line; all other characters (whitespace, hangul) are ignored.
 DB files (data/hanja_db/):
-  hanja.csv        char,hun,eum,reviewed   (reviewed: "1" means 검수 완료)
-  assignments.csv  body,grade,char
+  hanja_by_body.csv body,grade,char,hun,eum,reviewed,char_nfc,source_raw
+                    per-(body, char) 훈·음 — the source of truth (reviewed: "1" means 검수 완료)
+  assignments.csv   body,grade,char
+  hanja.csv         char,hun,eum,reviewed,... (legacy, compatibility only)
 """
 from __future__ import annotations
 
@@ -61,6 +63,16 @@ def load_db_hanja(path: Path = DATA / "hanja_db" / "hanja.csv") -> dict[str, dic
         return {row["char"]: row for row in csv.DictReader(fh)}
 
 
+def load_db_readings(
+    path: Path = DATA / "hanja_db" / "hanja_by_body.csv",
+) -> dict[tuple[str, str], dict[str, str]]:
+    """(body, raw char) -> row of the per-body 훈·음 table."""
+    if not path.is_file():
+        return {}
+    with path.open(encoding="utf-8", newline="") as fh:
+        return {(row["body"], row["char"]): row for row in csv.DictReader(fh)}
+
+
 def compare_assignments(
     official: dict[tuple[str, str], set[str]],
     db: dict[tuple[str, str], set[str]],
@@ -109,9 +121,32 @@ def validate_entries(
     return problems
 
 
+def validate_body_entries(
+    db: dict[tuple[str, str], set[str]], readings: dict[tuple[str, str], dict[str, str]]
+) -> list[str]:
+    """Per (body, char): a reading row must exist, with 훈, 음 and reviewed == '1'.
+
+    Problem strings: '<body>/<char>: no reading row' | 'missing 훈' | 'missing 음' | 'not reviewed'.
+    """
+    problems: list[str] = []
+    pairs = sorted({(body, ch) for (body, _g), chars in db.items() for ch in chars})
+    for body, ch in pairs:
+        row = readings.get((body, ch))
+        if row is None:
+            problems.append(f"{body}/{ch}: no reading row")
+            continue
+        if not (row.get("hun") or "").strip():
+            problems.append(f"{body}/{ch}: missing 훈")
+        if not (row.get("eum") or "").strip():
+            problems.append(f"{body}/{ch}: missing 음")
+        if (row.get("reviewed") or "").strip() != "1":
+            problems.append(f"{body}/{ch}: not reviewed")
+    return problems
+
+
 def main() -> int:
     problems = compare_assignments(load_official_lists(), load_db_assignments(), load_exam_bodies())
-    problems += validate_entries(load_db_assignments(), load_db_hanja())
+    problems += validate_body_entries(load_db_assignments(), load_db_readings())
     for p in problems:
         print(p)
     print("OK" if not problems else f"{len(problems)} problem(s)")
