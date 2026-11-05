@@ -1,0 +1,23 @@
+{
+  "generated_at": "2026-11-05T05:20:49.837143+00:00",
+  "sheet": "reports\\exam_sample_review.csv",
+  "sample_size": 360,
+  "by_source": {
+    "db": 360,
+    "ai": 0
+  },
+  "automated_db_check": {
+    "failed": 0,
+    "rate": 0.0,
+    "failed_by_source": {
+      "db": 0,
+      "ai": 0
+    },
+    "served_items_failed": 0,
+    "ai_note": "AI items that fail the DB gate are discarded before an exam is served"
+  },
+  "human_reviewed": false,
+  "human_error_rate": null,
+  "threshold": 0.01,
+  "note": "Automated check only. The AC6 criterion needs a person to fill human_verdict for every row."
+}

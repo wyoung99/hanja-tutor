@@ -1,0 +1,143 @@
+"""AC9: local first-token latency (p95) of the streaming chatbot, written to reports/p95.json.
+
+Default: starts a local uvicorn (backend/.env is loaded by the app -> real Bedrock when LLM_CONFIG and AWS
+keys are set), signs up a test parent/child through the dev endpoints and sends N vocabulary questions to
+POST /api/children/{id}/chat/stream. "First token" = time from sending the request until the first
+``event: token`` frame arrives (the server streams DB-corrected sentences, so this includes the first
+sentence). Use --url to measure an already running server instead (e.g. next start on :3100 to include
+the Next.js proxy hop).
+
+    python backend/scripts/measure_p95.py --n 20
+    python backend/scripts/measure_p95.py --url http://127.0.0.1:3100 --n 20
+
+The result is never invented: if the server runs the fake LLM the file says so and "valid_for_ac9" is false.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import socket
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+import httpx
+
+ROOT = Path(__file__).resolve().parents[2]
+BACKEND = ROOT / "backend"
+SLO_SECONDS = 3.0
+QUESTIONS = [
+    "學이 무슨 뜻이에요?", "校는 무슨 뜻이에요?", "山은 어떤 한자예요?", "水가 들어간 낱말 알려 주세요.",
+    "火는 무슨 뜻이에요?", "木으로 만든 낱말이 뭐가 있어요?", "金은 무슨 뜻이에요?", "土는 어떻게 읽어요?",
+    "日과 月은 뭐가 달라요?", "人이 들어간 낱말 알려 줘요.", "大는 무슨 뜻이에요?", "小는 어떻게 읽어요?",
+    "中은 무슨 뜻이에요?", "上과 下를 알려 주세요.", "東은 무슨 뜻이에요?", "西는 어떻게 읽어요?",
+    "南은 무슨 뜻이에요?", "北은 무슨 뜻이에요?", "先生은 무슨 뜻이에요?", "學校는 무슨 뜻이에요?",
+    "父母는 무슨 뜻이에요?", "兄弟는 무슨 뜻이에요?", "年은 무슨 뜻이에요?", "門은 무슨 뜻이에요?",
+]
+
+
+def free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def p95(xs):
+    ys = sorted(xs)
+    return ys[min(len(ys) - 1, max(0, -(-95 * len(ys) // 100) - 1))] if ys else None
+
+
+def start_server(port: int) -> subprocess.Popen:
+    env = {k: v for k, v in os.environ.items() if k != "HANJA_SKIP_DOTENV"}
+    env.update({"PYTHONPATH": str(BACKEND), "USAGE_CHATBOT_DAILY_LIMIT": "100000"})
+    proc = subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1",
+                             "--port", str(port)], cwd=BACKEND, env=env,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for _ in range(120):
+        try:
+            if httpx.get(f"http://127.0.0.1:{port}/api/health", timeout=1).status_code == 200:
+                return proc
+        except httpx.HTTPError:
+            pass
+        time.sleep(0.5)
+    proc.kill()
+    raise SystemExit("uvicorn did not start")
+
+
+def setup_child(c: httpx.Client) -> str:
+    ci = f"p95-{time.time_ns()}"
+    tok = c.post("/api/dev/verify", json={"ci": ci}).json()["verification_token"]
+    c.post("/api/parents/signup", json={"verification_token": tok, "email": f"{ci}@example.com",
+                                        "agree_terms": True, "agree_privacy": True, "agree_legal_guardian": True})
+    tok = c.post("/api/dev/verify", json={"ci": ci}).json()["verification_token"]
+    H = {"Authorization": "Bearer " + c.post("/api/parents/login", json={"verification_token": tok}).json()["session"]}
+    cid = c.post("/api/children", headers=H, json={"nickname": "측정", "pin": "1234", "ai_consent": True}).json()["id"]
+    c.put(f"/api/children/{cid}/target", headers=H, json={"body": "korea_eomunhoe", "grade": "8"}).raise_for_status()
+    return cid
+
+
+def ask(c: httpx.Client, cid: str, q: str) -> dict:
+    t0 = time.perf_counter()
+    first, status, kinds = None, None, []
+    with c.stream("POST", f"/api/children/{cid}/chat/stream", json={"message": q}, timeout=60) as r:
+        r.raise_for_status()
+        for line in r.iter_lines():
+            if line.startswith("event: "):
+                kinds.append(line[7:])
+                if line == "event: token" and first is None:
+                    first = time.perf_counter() - t0
+            elif line.startswith("data: ") and kinds and kinds[-1] in ("done", "error"):
+                status = json.loads(line[6:]).get("status")
+    return {"question": q, "first_token_s": None if first is None else round(first, 3),
+            "total_s": round(time.perf_counter() - t0, 3), "status": status, "events": len(kinds)}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--url", help="measure a running server instead of starting uvicorn")
+    ap.add_argument("--n", type=int, default=20)
+    ap.add_argument("--out", default=str(ROOT / "reports" / "p95.json"))
+    a = ap.parse_args()
+    proc = None
+    url = a.url
+    if not url:
+        port = free_port()
+        proc = start_server(port)
+        url = f"http://127.0.0.1:{port}"
+    try:
+        with httpx.Client(base_url=url, timeout=30) as c:
+            health = c.get("/api/health").json()
+            cid = setup_child(c)
+            ask(c, cid, "一은 무슨 뜻이에요?")  # warm-up (connection + model client init), not counted
+            samples = [ask(c, cid, QUESTIONS[i % len(QUESTIONS)]) for i in range(a.n)]
+    finally:
+        if proc:
+            proc.terminate()
+    ft = [s["first_token_s"] for s in samples if s["first_token_s"] is not None]
+    real = (health.get("llm") or {}).get("chat") == "BedrockProvider"
+    out = {
+        "measured_at": datetime.now(timezone.utc).isoformat(),
+        "environment": "local " + ("uvicorn (started by script)" if proc else url),
+        "target": url, "llm": health.get("llm"), "real_bedrock": real,
+        "sample_size": len(samples), "with_first_token": len(ft),
+        "first_token_p50_s": sorted(ft)[len(ft) // 2] if ft else None,
+        "first_token_p95_s": p95(ft), "first_token_max_s": max(ft) if ft else None,
+        "slo_s": SLO_SECONDS,
+        "errors": sum(1 for s in samples if s["status"] not in ("answered", "unknown")),
+        "pass": bool(ft) and len(ft) == len(samples) and p95(ft) < SLO_SECONDS,
+        "valid_for_ac9": real,
+        "note": "first token = first DB-corrected sentence frame (event: token) after the request was sent",
+        "samples": samples,
+    }
+    Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+    Path(a.out).write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps({k: out[k] for k in ("real_bedrock", "sample_size", "first_token_p50_s",
+                                          "first_token_p95_s", "first_token_max_s", "errors", "pass")}))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
