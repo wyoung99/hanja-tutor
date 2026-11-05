@@ -1,0 +1,33 @@
+{
+  "_comment": "Exam bodies and supported grades. Grades are NOT mapped across bodies. Per-grade assigned hanja live in data/hanja_db/assignments.csv; official public lists live in data/official_lists/<body>/<grade>.txt. 대한검정회 준급(준5·준4·준3)은 공식 등급 순서대로 6급과 5급, 5급과 4급, 4급과 3급 사이에 둔다.",
+  "bodies": {
+    "korea_eomunhoe": {
+      "name": "한국어문회",
+      "grades": [
+        "8",
+        "7II",
+        "7",
+        "6II",
+        "6",
+        "5II",
+        "5",
+        "4II",
+        "4"
+      ]
+    },
+    "daegeom": {
+      "name": "대한검정회",
+      "grades": [
+        "8",
+        "7",
+        "6",
+        "준5",
+        "5",
+        "준4",
+        "4",
+        "준3",
+        "3"
+      ]
+    }
+  }
+}
