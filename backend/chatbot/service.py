@@ -74,19 +74,20 @@ class ChatResult:
 # ---- pure post-processing -----------------------------------------------------
 def postprocess(reply: str, kb: HanjaKnowledge, target: Optional[tuple], dictionary: Optional[DictionaryClient],
                 shape: bool = True):
-    """Correct 훈·음 to DB values, mark above-target hanja, enforce 3~5 sentences.
+    """Correct 훈·음 to the selected body's DB values, mark above-target hanja, enforce 3~5 sentences.
 
     Returns (text, unresolved) where unresolved are hanja found neither in the DB nor in 우리말샘.
     """
     unresolved: List[str] = []
     dict_notes: List[str] = []
+    body = target[0] if target else None
 
     def sub(m: re.Match) -> str:
         word, ann = m.group("w"), m.group("a")
         out_ann = f"({ann})" if ann else ""
         upper = False
         for ch in word:
-            if kb.entry(ch) is None:
+            if kb.entry(ch, body) is None:
                 d = dictionary.lookup(ch) if dictionary else None
                 if d is None:
                     unresolved.append(ch)
@@ -94,9 +95,9 @@ def postprocess(reply: str, kb: HanjaKnowledge, target: Optional[tuple], diction
                     dict_notes.append(f"'{ch}'은(는) 우리말샘에서 찾았어요: {d}")
             elif target and not kb.within_target(target[0], target[1], ch):
                 upper = True
-        if ann and len(word) == 1 and kb.entry(word):
+        if ann and len(word) == 1 and kb.entry(word, body):
             if " " in ann or len(ann) == 1:
-                e = kb.entry(word)
+                e = kb.entry(word, body)
                 out_ann = f"({e['hun'].strip()} {e['eum'].strip()})"
         return word + out_ann + (UPPER_MARK if upper else "")
 
@@ -232,8 +233,9 @@ class ChatbotService:
     def _prepare(self, child_id: str, message: str, history: List[dict]):
         """Either a final ChatResult (no LLM needed) or a dict describing the LLM call."""
         target = self._target(child_id)
+        body = target[0] if target else None
         q_chars = list(dict.fromkeys(HANJA_RE.findall(message)))
-        known = [c for c in q_chars if self.kb.entry(c)]
+        known = [c for c in q_chars if self.kb.entry(c, body)]
         sources: List[str] = []
         notes: List[str] = []
         unresolved: List[str] = []
@@ -253,7 +255,7 @@ class ChatbotService:
 
         ctx = []
         for c in known:
-            e = self.kb.entry(c)
+            e = self.kb.entry(c, body)
             tag = "" if not target or self.kb.within_target(target[0], target[1], c) else " (상위 급수)"
             ctx.append(f"{c}: 훈 {e['hun'].strip()}, 음 {e['eum'].strip()}{tag}")
         system = (

@@ -112,10 +112,10 @@
 | 파일 | 내용 |
 |---|---|
 | `assignments.csv` | body,grade,char. 어문회 1000행, 검정회 1000행(준5·준4·준3 380행 포함). |
-| `hanja.csv` | char,hun,eum,reviewed,char_nfc,hunum_source,hunum_raw. 1170자. 현재 앱 코드(verify.py 등) 호환용으로만 남긴다. 훈·음의 정답 원천은 `hanja_by_body.csv`이며, 앱이 기관별 조회로 바뀌면 이 파일의 훈·음 열은 쓰지 않는다. |
+| `hanja.csv` | char,hun,eum,reviewed,char_nfc,hunum_source,hunum_raw. 1170자. 호환용으로만 남긴다(`verify.validate_entries`, 레거시 테스트). 앱은 이 파일의 훈·음 열을 쓰지 않는다. 훈·음의 정답 원천은 `hanja_by_body.csv`다. |
 | `hanja_by_body.csv` | body,grade,char,hun,eum,reviewed,char_nfc,source_raw. **기관별 훈·음의 정답 원천**(2000행 = 배정 (기관, 글자) 쌍과 1:1). reviewed는 전부 "0". |
 
-- **기관별 훈·음 분리 (결정 2026-11-05).** 두 기관 모두에 있는 830자 중 157자는 기관별 대표훈이 다르다(예: 兄 어문회 "형 형" / 검정회 "맏 형"). 대표음이 다른 글자도 3자다(易 역/이, 更 경/갱, 取 원문 누락). 결정에 따라 훈·음은 (기관, 글자) 단위 `hanja_by_body.csv`에 두고, 자녀가 선택한 기관의 값으로 제시·채점한다. 앱 코드 반영은 다음 실행에서 한다(Seed constraints 참조).
+- **기관별 훈·음 분리 (결정 2026-11-05).** 두 기관 모두에 있는 830자 중 157자는 기관별 대표훈이 다르다(예: 兄 어문회 "형 형" / 검정회 "맏 형"). 대표음이 다른 글자도 3자다(易 역/이, 更 경/갱, 取 원문 누락). 결정에 따라 훈·음은 (기관, 글자) 단위 `hanja_by_body.csv`에 두고, 자녀가 선택한 기관의 값으로 제시·채점한다. 앱은 `backend/hanja_db/store.py`(HanjaStore)로 이 파일을 읽는다. 조회는 NFC 기준(`char_nfc`)이다. 오늘의 한자, 복습, 모의고사 출제·채점, 챗봇 훈·음 교정, 리포트가 모두 자녀가 선택한 기관의 값을 쓴다. 훈·음이 빈 행(검정회 取, 暴의 음)은 검수 전까지 모의고사에 내지 않는다.
 - **사람 검수 필요.** 1129자(지원 급수 배정 글자)는 모두 `reviewed=0`이라 `verify.py`가 "not reviewed"로 보고한다. 검수자는 `hanja_by_body.csv`의 `source_raw`와 원문을 대조한 뒤 (기관, 글자) 행마다 `reviewed=1`로 바꾼다.
 
 ---

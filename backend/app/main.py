@@ -3,8 +3,13 @@
 Wires the independently-tested services (accounts, usage, chatbot, mock exam, tracing, study plan,
 reports, billing, refunds) behind one HTTP API under ``/api``.
 
-Staging mode (default, ``HANJA_ENV != "production"``) uses a small *demo* hanja world, a fake identity
-verifier (``POST /api/dev/verify``), a fake Toss gateway (unless ``TOSS_SECRET_KEY`` is set) and a fake LLM
+Hanja data is always the real DB: per-body 훈·음 from ``data/hanja_db/hanja_by_body.csv`` and assignments
+from ``assignments.csv`` (NFC lookups), stroke medians from ``data/stroke_data/strokes.json`` (hanzi-writer).
+Every 훈·음 shown, asked or graded is the value of the child's selected exam body. Grades without a known
+official exam format (대한검정회 준5·준4·준3) get learning features only; mock-exam start is blocked.
+
+Staging mode (default, ``HANJA_ENV != "production"``) uses a fake identity verifier
+(``POST /api/dev/verify``), a fake Toss gateway (unless ``TOSS_SECRET_KEY`` is set) and a fake LLM
 (unless ``LLM_CONFIG`` JSON is provided -> ``llm.build_provider``). Time is injectable for KST-boundary tests.
 """
 from __future__ import annotations
@@ -27,39 +32,31 @@ from billing import BillingConfig, BillingService, FakeTossGateway, RecordingEma
 from billing.api import create_router as billing_router  # noqa: E402
 from chatbot.knowledge import HanjaKnowledge  # noqa: E402
 from chatbot.service import ChatbotService, RecordingNotifier  # noqa: E402
-from hanja_db.verify import load_exam_bodies  # noqa: E402
+from hanja_db.store import HanjaStore, nfc  # noqa: E402
 from llm import FakeProvider, LLMRouter, build_llm_router  # noqa: E402
 from mockexam import formats as F  # noqa: E402
 from mockexam import questions as Q  # noqa: E402
-from mockexam.service import ExamError, MockExamService, cumulative_pool  # noqa: E402
+from mockexam.service import ExamError, FormatPending, MockExamService, cumulative_pool  # noqa: E402
 from refunds import RefundService  # noqa: E402
 from refunds.api import create_router as refunds_router  # noqa: E402
 from reports.service import ReportService, SubscriptionRequired  # noqa: E402
 from screentime.service import ScreenTimeService  # noqa: E402
 from study.planner import PlanHanja, StudyPlanner  # noqa: E402
 from tracing.grader import TracingProgress, start_attempt  # noqa: E402
-from tracing.strokes import StrokeData  # noqa: E402
+from tracing.strokes import StrokeData, is_gradable, load_db as load_stroke_db  # noqa: E402
 from usage import CHATBOT, MOCKEXAM, LimitReached, UsageLimitConfig, UsageService  # noqa: E402
 
 KST = timezone(timedelta(hours=9))
-TOP = ((200, 300), (500, 300), (800, 300))
-BOT = ((100, 700), (500, 700), (900, 700))
-COMMON = "學校敎室人大小中山水火木金土日月年先生門東西南北父母兄弟女子"
+BODY_NAMES = {"korea_eomunhoe": "한국어문회", "daegeom": "대한검정회"}
 
 
-def demo_world(bodies: Dict[str, list], per_grade: int = 60):
-    """Synthetic *demo* reviewed DB (staging only): per (body, grade) `per_grade` newly assigned chars."""
-    hanja, assign, n = {}, {}, 0
-    for body, grades in bodies.items():
-        for g in grades:
-            chars = set()
-            for _ in range(per_grade):
-                c = COMMON[n] if n < len(COMMON) else chr(0x4E00 + n)
-                hanja[c] = Q.Hanja(c, f"훈{n}", f"음{n % 57}")
-                chars.add(c)
-                n += 1
-            assign[(body, g)] = chars
-    return hanja, assign
+def hanja_by_body(store: HanjaStore) -> Dict[str, Dict[str, Q.Hanja]]:
+    """body -> char -> Hanja(char, hun, eum) with that body's own reading (incomplete rows left out)."""
+    out: Dict[str, Dict[str, Q.Hanja]] = {b: {} for b in store.bodies}
+    for (body, c), r in store.readings.items():
+        if r.complete:
+            out.setdefault(body, {})[c] = Q.Hanja(c, r.hun, r.eum)
+    return out
 
 
 class Clock:
@@ -103,13 +100,15 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
     production = env.get("HANJA_ENV") == "production"
     app = FastAPI(title="hanja-tutor")
 
-    # ---- data -------------------------------------------------------------
-    bodies = load_exam_bodies()
+    # ---- data (real DB; no synthetic hanja) -----------------------------------
+    store = HanjaStore.load()
+    bodies = store.bodies
     formats = F.load_formats()
-    hanja, assign = demo_world(bodies)
-    sdb = {c: StrokeData(c, (TOP, BOT), True) for c in hanja}
-    kb = HanjaKnowledge({c: {"char": c, "hun": h.hun, "eum": h.eum, "reviewed": "1"} for c, h in hanja.items()},
-                        assign, {b: list(g) for b, g in bodies.items()})
+    pending = F.load_pending()
+    assign = store.assignment_sets()
+    hanja = hanja_by_body(store)
+    sdb: Dict[str, StrokeData] = load_stroke_db()
+    kb = HanjaKnowledge.from_store(store)
 
     # ---- services -----------------------------------------------------------
     ver = FakeIdentityVerifier()
@@ -144,23 +143,46 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
     planners: Dict[str, StudyPlanner] = {}
     tracings: Dict[str, TracingProgress] = {}
     attempts: Dict[str, object] = {}
-    pool = lambda b, g: cumulative_pool(b, g, bodies[b], assign, hanja)  # noqa: E731
-    exam = MockExamService(formats, pool, sdb, sdb, clock=clock, charge=usage.exam_charge(),
-                           on_wrong_char=lambda pid, c: planner_of(pid).add_review(c))
+    pool = lambda b, g: cumulative_pool(b, g, bodies[b], assign, hanja.get(b, {}))  # noqa: E731
+    exam = MockExamService(formats, pool, sdb, clock=clock, charge=usage.exam_charge(),
+                           on_wrong_char=lambda pid, c: planner_of(pid).add_review(c), pending=pending)
     st = ScreenTimeService(acc, clock)
+
+    def target_of(cid: str) -> Optional[tuple]:
+        t = acc.children[cid].extra.get("target")
+        return tuple(t) if t else None
 
     def planner_of(cid: str) -> StudyPlanner:
         if cid not in planners:
-            t = acc.children[cid].extra.get("target")
-            chars = sorted(assign[tuple(t)]) if t else []
+            t = target_of(cid)
+            # The DB has no usage-frequency column yet, so the rank is the official list order of the grade.
+            chars = store.grade_chars(*t) if t else []
             planners[cid] = StudyPlanner([PlanHanja(c, i + 1) for i, c in enumerate(chars)], clock)
         return planners[cid]
+
+    def reading_for(cid: str, ch: str) -> Optional[dict]:
+        """The child's selected body's 훈·음 for ch (never another body's)."""
+        t = target_of(cid)
+        r = store.reading(t[0], ch) if t else None
+        if r is None:
+            return None
+        return {"hun": r.hun or None, "eum": r.eum or None, "reviewed": r.reviewed}
+
+    def tracing_mode(ch: str) -> str:
+        if is_gradable(ch, sdb):
+            return "graded"
+        return "animation_only" if ch in sdb else "unavailable"
+
+    def card(cid: str, ch: str) -> dict:
+        r = reading_for(cid, ch) or {"hun": None, "eum": None, "reviewed": False}
+        return {"char": ch, **r, "strokes": sdb[ch].stroke_count if ch in sdb else 0,
+                "tracing": tracing_mode(ch)}
 
     def tracing_of(cid: str) -> TracingProgress:
         return tracings.setdefault(cid, TracingProgress())
 
     reports = ReportService(acc, bill, st, planner_of, tracing_of, exam, None, usage, push, mail,
-                            clock=clock)
+                            clock=clock, reading_for=reading_for)
 
     def parent_of_session(tok: str) -> str:
         return acc.parent_for_session(tok).id
@@ -178,6 +200,10 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
             raise HTTPException(404, {"code": "not_found"})
         return c
 
+    def exam_info(b: str, g: str) -> dict:
+        status = F.exam_status(formats, pending, b, g)
+        return {"status": status, "message": F.FORMAT_PENDING_MESSAGE if status == "format_pending" else None}
+
     api = APIRouter(prefix="/api")
     api.include_router(accounts_router(acc))
     api.include_router(billing_router(bill, parent_of_session))
@@ -194,16 +220,17 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
 
     @api.get("/catalog")
     def catalog():
-        return [{"body": b, "grades": g} for b, g in bodies.items()]
+        return [{"body": b, "name": BODY_NAMES.get(b, b), "grades": g,
+                 "exam": {x: exam_info(b, x) for x in g}} for b, g in bodies.items()]
 
     @api.put("/children/{child_id}/target")
     def set_target(child_id: str, body: TargetIn, authorization: Optional[str] = Header(None)):
         c = child_for(authorization, child_id)
-        if (body.body, body.grade) not in formats:
-            raise HTTPException(422, {"code": "unsupported_exam"})
+        if body.grade not in bodies.get(body.body, []):
+            raise HTTPException(422, {"code": "unsupported_grade"})
         c.extra["target"] = (body.body, body.grade)
         planners.pop(child_id, None)
-        return {"body": body.body, "grade": body.grade}
+        return {"body": body.body, "grade": body.grade, "exam": exam_info(body.body, body.grade)}
 
     @api.get("/children/{child_id}/today")
     def today(child_id: str):
@@ -211,16 +238,32 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
         if not c.extra.get("target"):
             raise HTTPException(409, {"code": "no_target"})
         s = planner_of(child_id).todays_session()
+        b, g = c.extra["target"]
+        return {"body": b, "grade": g, "exam": exam_info(b, g),
+                "new": [card(child_id, x) for x in s["new"]], "reviews": [card(child_id, x) for x in s["reviews"]]}
 
-        def card(ch):
-            h = hanja[ch]
-            return {"char": ch, "hun": h.hun, "eum": h.eum,
-                    "strokes": len(sdb[ch].strokes) if ch in sdb else 0}
-        return {"new": [card(x) for x in s["new"]], "reviews": [card(x) for x in s["reviews"]]}
+    @api.get("/children/{child_id}/hanja/{char}")
+    def hanja_card(child_id: str, char: str):
+        child_for(None, child_id)
+        if not target_of(child_id):
+            raise HTTPException(409, {"code": "no_target"})
+        ch = nfc(char)
+        if reading_for(child_id, ch) is None:
+            raise HTTPException(404, {"code": "not_in_body_db"})
+        return card(child_id, ch)
+
+    @api.get("/strokes/{char}")
+    def strokes(char: str):
+        ch = nfc(char)
+        d = sdb.get(ch)
+        if d is None:
+            raise HTTPException(404, {"code": "no_stroke_data"})
+        return {"char": ch, "mode": tracing_mode(ch), "strokes": [[list(p) for p in s] for s in d.strokes]}
 
     @api.post("/children/{child_id}/today/{char}/complete")
     def complete(child_id: str, char: str):
         child_for(None, child_id)
+        char = nfc(char)
         try:
             planner_of(child_id).complete_new(char)
             reports.complete_new(child_id, char)
@@ -231,6 +274,7 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
     @api.post("/children/{child_id}/reviews/{char}")
     def review(child_id: str, char: str, body: ReviewIn):
         child_for(None, child_id)
+        char = nfc(char)
         try:
             planner_of(child_id).answer_review(char, body.correct)
             reports.answer_review(child_id, char, body.correct)
@@ -242,21 +286,26 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
     @api.post("/children/{child_id}/tracing/{char}/start")
     def trace_start(child_id: str, char: str):
         child_for(None, child_id)
-        r = start_attempt(char, sdb, sdb)
+        char = nfc(char)
+        r = start_attempt(char, sdb)
+        strokes_out = [[list(p) for p in s] for s in (sdb[char].strokes if char in sdb else ())]
         if r["mode"] == "graded":
             attempts[f"{child_id}:{char}"] = r["attempt"]
-            return {"mode": "graded", "strokes": len(r["attempt"].data.strokes)}
-        return {"mode": "animation_only", "strokes": [[list(p) for p in s] for s in r["strokes"]]}
+        # the median polylines double as the tracing guide shown under the pad
+        return {"mode": r["mode"], "stroke_count": len(strokes_out), "strokes": strokes_out}
 
     @api.post("/children/{child_id}/tracing/{char}/stroke")
     def trace_stroke(child_id: str, char: str, body: StrokeIn):
         child_for(None, child_id)
+        char = nfc(char)
         att = attempts.get(f"{child_id}:{char}")
         if att is None:
             raise HTTPException(409, {"code": "not_started"})
         fb = att.submit([tuple(p) for p in body.stroke])
         out = {"ok": fb.ok, "error": fb.error, "highlight_stroke": fb.highlight_stroke,
                "reveal_answer": fb.reveal_answer, "stroke_index": fb.stroke_index, "done": fb.done}
+        if fb.reveal_answer:  # 3rd error on the same stroke: show the correct stroke
+            out["answer_stroke"] = [list(p) for p in att.data.strokes[fb.stroke_index]]
         if fb.done:
             out["result"] = tracing_of(child_id).record(
                 char, att, clock, lambda c: planner_of(child_id).add_review(c, "tracing_answer_seen"))
@@ -273,6 +322,8 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
             e = exam.start(child_id, t[0], t[1], body.seed)
         except LimitReached as e2:
             raise HTTPException(429, {"code": "limit_reached", "resets_at": e2.resets_at.isoformat()})
+        except FormatPending:
+            raise HTTPException(409, {"code": "exam_format_pending", "message": F.FORMAT_PENDING_MESSAGE})
         except ExamError as e2:
             raise HTTPException(409, {"code": "exam_error", "message": str(e2)})
         v = exam.public_view(e)
@@ -333,7 +384,7 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
 
     app.include_router(api)
     app.state.services = dict(acc=acc, usage=usage, bill=bill, refunds=refunds, exam=exam, gateway=gw,
-                              llm_router=llm_router)
+                              llm_router=llm_router, store=store, strokes=sdb, bot=bot, reports=reports)
     return app
 
 

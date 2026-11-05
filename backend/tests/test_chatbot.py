@@ -21,7 +21,7 @@ def make_kb():
     rows = {
         "學": ("배울", "학"), "校": ("학교", "교"), "大": ("큰", "대"), "漢": ("한나라", "한"),
     }
-    hanja = {c: {"char": c, "hun": h, "eum": e, "reviewed": "1"} for c, (h, e) in rows.items()}
+    hanja = {"b": {c: {"char": c, "hun": h, "eum": e, "reviewed": "1"} for c, (h, e) in rows.items()}}
     assign = {("b", "8"): set("學校大"), ("b", "7"): set("漢")}
     return HanjaKnowledge(hanja, assign, {"b": ["8", "7"]}, vocab={"學校": "배우는 곳"})
 

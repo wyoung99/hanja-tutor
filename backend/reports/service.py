@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from typing import Callable, Dict, List, Set
+from typing import Callable, Dict, List, Optional, Set
 
 KST = timezone(timedelta(hours=9))
 PASS_WINDOW = 3
@@ -48,7 +48,9 @@ class ReportService:
         email=None,                   # send(to, subject, body)
         can_push: Callable[[str], bool] = lambda parent_id: True,
         clock: Callable[[], datetime] = lambda: datetime.now(KST),
+        reading_for: Optional[Callable[[str, str], Optional[dict]]] = None,  # (child, char) -> body's 훈·음
     ) -> None:
+        self.reading_for = reading_for
         self.accounts, self.billing, self.screentime = accounts, billing, screentime
         self.planner_for, self.tracing_for = planner_for, tracing_for
         self.mockexam, self.conversations, self.usage = mockexam, conversations, usage
@@ -146,12 +148,19 @@ class ReportService:
                        "likely_pass": margin >= 0}
         return {
             "child_id": child_id, "days": days,
-            "weak_hanja": [{"char": c, "misses": n} for c, n in
+            "weak_hanja": [self._weak(child_id, c, n) for c, n in
                            sorted(wrong.items(), key=lambda kv: (-kv[1], kv[0]))],
             "mock_exam_trend": trend,
             "pass_likelihood": passing,
             "writing_completed_count": tr.completed_count(),
         }
+
+    def _weak(self, child_id: str, char: str, misses: int) -> dict:
+        out = {"char": char, "misses": misses}
+        r = self.reading_for(child_id, char) if self.reading_for else None
+        if r:  # the child's selected exam body's 훈·음
+            out["hun"], out["eum"] = r.get("hun"), r.get("eum")
+        return out
 
     def detailed_report(self, parent_id: str, child_id: str, days: int = 30) -> dict:
         self.accounts._owned(parent_id, child_id)
