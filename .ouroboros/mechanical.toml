@@ -5,7 +5,10 @@
 # "npm --prefix frontend run test && python -m pytest ..." was therefore dropped (test_command=None), which is
 # why the test check showed as "skipped / not configured" while build ran. Bare "python -m pytest" is also
 # refused because pytest is not declared by a repo manifest. The chaining now lives inside the npm script
-# frontend/package.json "test:all" (vitest, then backend pytest); both must pass for exit code 0.
+# frontend/package.json "test:all" = "test:unit" (vitest, then hermetic backend pytest incl. the embedded-PostgreSQL
+# integration tests) followed by "test:smoke" (pytest -m live_smoke: a few real Bedrock / 우리말샘 calls and a
+# 10-question first-token p95 run -> reports/p95-eval.json). live_smoke reads backend/.env of the evaluated checkout
+# (or HANJA_DOTENV) and FAILS when AWS credentials are missing. All parts must pass for exit code 0.
 
 build = "npm --prefix frontend run build"
 test = "npm --prefix frontend run test:all"
