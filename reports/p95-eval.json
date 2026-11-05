@@ -1,5 +1,5 @@
 {
-  "measured_at": "2026-11-05T08:14:25.080202+00:00",
+  "measured_at": "2026-11-05T09:04:32.358516+00:00",
   "environment": "local uvicorn (live_smoke)",
   "llm": {
     "chat": "BedrockProvider",
@@ -9,80 +9,80 @@
   "real_bedrock": true,
   "sample_size": 10,
   "with_first_token": 10,
-  "first_token_p50_s": 1.462,
-  "first_token_p95_s": 2.1,
-  "first_token_max_s": 2.1,
+  "first_token_p50_s": 1.474,
+  "first_token_p95_s": 2.059,
+  "first_token_max_s": 2.059,
   "slo_s": 3.0,
   "errors": 0,
   "pass": true,
   "samples": [
     {
       "question": "學이 무슨 뜻이에요?",
-      "first_token_s": 1.466,
-      "total_s": 2.012,
+      "first_token_s": 1.437,
+      "total_s": 2.382,
       "status": "answered",
       "events": 5
     },
     {
       "question": "校는 무슨 뜻이에요?",
-      "first_token_s": 1.523,
-      "total_s": 1.991,
+      "first_token_s": 1.767,
+      "total_s": 2.204,
       "status": "answered",
       "events": 5
     },
     {
       "question": "山은 어떤 한자예요?",
-      "first_token_s": 1.227,
-      "total_s": 2.166,
+      "first_token_s": 1.26,
+      "total_s": 1.803,
       "status": "answered",
-      "events": 6
+      "events": 5
     },
     {
       "question": "水가 들어간 낱말 알려 주세요.",
-      "first_token_s": 1.462,
-      "total_s": 5.415,
+      "first_token_s": 1.373,
+      "total_s": 2.748,
       "status": "answered",
       "events": 7
     },
     {
       "question": "火는 무슨 뜻이에요?",
-      "first_token_s": 2.1,
-      "total_s": 2.315,
+      "first_token_s": 2.059,
+      "total_s": 2.625,
       "status": "answered",
-      "events": 5
+      "events": 6
     },
     {
       "question": "木으로 만든 낱말이 뭐가 있어요?",
-      "first_token_s": 1.477,
-      "total_s": 3.055,
+      "first_token_s": 1.423,
+      "total_s": 2.253,
       "status": "answered",
       "events": 4
     },
     {
       "question": "金은 무슨 뜻이에요?",
-      "first_token_s": 1.275,
-      "total_s": 1.95,
+      "first_token_s": 1.474,
+      "total_s": 2.157,
       "status": "answered",
       "events": 5
     },
     {
       "question": "土는 어떻게 읽어요?",
-      "first_token_s": 1.341,
-      "total_s": 2.04,
+      "first_token_s": 1.915,
+      "total_s": 2.531,
       "status": "answered",
-      "events": 4
+      "events": 3
     },
     {
       "question": "日과 月은 뭐가 달라요?",
-      "first_token_s": 1.427,
-      "total_s": 1.892,
+      "first_token_s": 1.217,
+      "total_s": 2.023,
       "status": "answered",
-      "events": 5
+      "events": 6
     },
     {
       "question": "人이 들어간 낱말 알려 줘요.",
-      "first_token_s": 1.438,
-      "total_s": 2.305,
+      "first_token_s": 1.559,
+      "total_s": 2.435,
       "status": "answered",
       "events": 7
     }
