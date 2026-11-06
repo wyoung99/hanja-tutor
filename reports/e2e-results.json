@@ -2,16 +2,16 @@
   "config": {
     "argv": [
       "C:\\Program Files\\nodejs\\node.exe",
-      "C:\\code\\mini-pjt\\.claude\\worktrees\\app-continue\\frontend\\node_modules\\@playwright\\test\\cli.js",
+      "C:\\code\\mini-pjt\\.claude\\worktrees\\auth-login\\frontend\\node_modules\\@playwright\\test\\cli.js",
       "test"
     ],
-    "configFile": "C:\\code\\mini-pjt\\.claude\\worktrees\\app-continue\\frontend\\playwright.config.ts",
-    "rootDir": "C:/code/mini-pjt/.claude/worktrees/app-continue/frontend/e2e",
+    "configFile": "C:\\code\\mini-pjt\\.claude\\worktrees\\auth-login\\frontend\\playwright.config.ts",
+    "rootDir": "C:/code/mini-pjt/.claude/worktrees/auth-login/frontend/e2e",
     "failOnFlakyTests": false,
     "forbidOnly": false,
     "fullyParallel": false,
     "globalSetup": null,
-    "globalTeardown": "C:\\code\\mini-pjt\\.claude\\worktrees\\app-continue\\frontend\\e2e\\global-teardown.ts",
+    "globalTeardown": "C:\\code\\mini-pjt\\.claude\\worktrees\\auth-login\\frontend\\e2e\\global-teardown.ts",
     "globalTimeout": 0,
     "grep": {},
     "grepInvert": null,
@@ -22,7 +22,7 @@
     "preserveOutput": "always",
     "projects": [
       {
-        "outputDir": "C:/code/mini-pjt/.claude/worktrees/app-continue/frontend/test-results",
+        "outputDir": "C:/code/mini-pjt/.claude/worktrees/auth-login/frontend/test-results",
         "repeatEach": 1,
         "retries": 0,
         "metadata": {
@@ -30,7 +30,7 @@
         },
         "id": "",
         "name": "",
-        "testDir": "C:/code/mini-pjt/.claude/worktrees/app-continue/frontend/e2e",
+        "testDir": "C:/code/mini-pjt/.claude/worktrees/auth-login/frontend/e2e",
         "testIgnore": [],
         "testMatch": [
           "**/*.@(spec|test).?(c|m)[jt]s?(x)"
@@ -42,15 +42,15 @@
       {
         "grep": {},
         "grepInvert": null,
-        "outputDir": "C:\\code\\mini-pjt\\.claude\\worktrees\\app-continue\\frontend\\test-results",
+        "outputDir": "C:\\code\\mini-pjt\\.claude\\worktrees\\auth-login\\frontend\\test-results",
         "repeatEach": 1,
         "retries": 0,
         "metadata": {
           "actualWorkers": 1
         },
         "name": "",
-        "testDir": "C:\\code\\mini-pjt\\.claude\\worktrees\\app-continue\\frontend\\e2e",
-        "snapshotDir": "C:\\code\\mini-pjt\\.claude\\worktrees\\app-continue\\frontend\\e2e",
+        "testDir": "C:\\code\\mini-pjt\\.claude\\worktrees\\auth-login\\frontend\\e2e",
+        "snapshotDir": "C:\\code\\mini-pjt\\.claude\\worktrees\\auth-login\\frontend\\e2e",
         "testIgnore": [],
         "testMatch": "**/*.@(spec|test).?(c|m)[jt]s?(x)",
         "timeout": 120000,
@@ -97,7 +97,7 @@
       "line": 0,
       "specs": [
         {
-          "title": "AC2: no AI consent disables only the chatbot; 5 wrong PINs lock; parent reset unlocks",
+          "title": "AC2: login page is the landing route, /signup is separate, no phone verification anywhere",
           "ok": true,
           "tags": [],
           "tests": [
@@ -112,12 +112,12 @@
                   "workerIndex": 0,
                   "parallelIndex": 0,
                   "status": "passed",
-                  "duration": 2365,
+                  "duration": 2104,
                   "errors": [],
                   "stdout": [],
                   "stderr": [],
                   "retry": 0,
-                  "startTime": "2026-11-06T00:51:52.153Z",
+                  "startTime": "2026-11-06T03:29:23.107Z",
                   "annotations": [],
                   "attachments": []
                 }
@@ -125,9 +125,43 @@
               "status": "expected"
             }
           ],
-          "id": "85b3cc1667c06e9efc8f-fe0ca4224e6c9b2b0ca6",
+          "id": "85b3cc1667c06e9efc8f-5293ada7f831f3d25bf6",
           "file": "features.spec.ts",
-          "line": 59,
+          "line": 12,
+          "column": 5
+        },
+        {
+          "title": "AC2: parent-created child account; no AI consent disables only the chatbot; 5 wrong passwords lock; parent reset unlocks; child is refused on parent APIs",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4340,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-06T03:29:25.441Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "85b3cc1667c06e9efc8f-4e42abf1e2711ab3a6a1",
+          "file": "features.spec.ts",
+          "line": 38,
           "column": 5
         },
         {
@@ -146,12 +180,12 @@
                   "workerIndex": 0,
                   "parallelIndex": 0,
                   "status": "passed",
-                  "duration": 1076,
+                  "duration": 1745,
                   "errors": [],
                   "stdout": [],
                   "stderr": [],
                   "retry": 0,
-                  "startTime": "2026-11-06T00:51:54.893Z",
+                  "startTime": "2026-11-06T03:29:29.800Z",
                   "annotations": [],
                   "attachments": []
                 }
@@ -161,7 +195,7 @@
           ],
           "id": "85b3cc1667c06e9efc8f-fbd76024b9e433c590be",
           "file": "features.spec.ts",
-          "line": 99,
+          "line": 88,
           "column": 5
         },
         {
@@ -180,12 +214,12 @@
                   "workerIndex": 0,
                   "parallelIndex": 0,
                   "status": "passed",
-                  "duration": 12397,
+                  "duration": 13419,
                   "errors": [],
                   "stdout": [],
                   "stderr": [],
                   "retry": 0,
-                  "startTime": "2026-11-06T00:51:55.984Z",
+                  "startTime": "2026-11-06T03:29:31.560Z",
                   "annotations": [],
                   "attachments": []
                 }
@@ -195,7 +229,7 @@
           ],
           "id": "85b3cc1667c06e9efc8f-860920df1b1d8709c567",
           "file": "features.spec.ts",
-          "line": 110,
+          "line": 101,
           "column": 5
         },
         {
@@ -214,12 +248,12 @@
                   "workerIndex": 0,
                   "parallelIndex": 0,
                   "status": "passed",
-                  "duration": 6363,
+                  "duration": 6946,
                   "errors": [],
                   "stdout": [],
                   "stderr": [],
                   "retry": 0,
-                  "startTime": "2026-11-06T00:52:08.395Z",
+                  "startTime": "2026-11-06T03:29:44.997Z",
                   "annotations": [],
                   "attachments": []
                 }
@@ -229,7 +263,7 @@
           ],
           "id": "85b3cc1667c06e9efc8f-cd64ee1fbf2754f61a54",
           "file": "features.spec.ts",
-          "line": 155,
+          "line": 148,
           "column": 5
         },
         {
@@ -248,12 +282,12 @@
                   "workerIndex": 0,
                   "parallelIndex": 0,
                   "status": "passed",
-                  "duration": 17556,
+                  "duration": 18335,
                   "errors": [],
                   "stdout": [],
                   "stderr": [],
                   "retry": 0,
-                  "startTime": "2026-11-06T00:52:14.772Z",
+                  "startTime": "2026-11-06T03:29:51.964Z",
                   "annotations": [],
                   "attachments": []
                 }
@@ -263,11 +297,11 @@
           ],
           "id": "85b3cc1667c06e9efc8f-2f5937b952dd4a89f207",
           "file": "features.spec.ts",
-          "line": 178,
+          "line": 174,
           "column": 5
         },
         {
-          "title": "AC11: daily limit -> 5-minute notice -> lock; extension request approved by parent; parent PIN adds time",
+          "title": "AC11: daily limit -> 5-minute notice -> lock; extension request approved by parent; parent password adds time",
           "ok": true,
           "tags": [],
           "tests": [
@@ -282,12 +316,12 @@
                   "workerIndex": 0,
                   "parallelIndex": 0,
                   "status": "passed",
-                  "duration": 47010,
+                  "duration": 47559,
                   "errors": [],
                   "stdout": [],
                   "stderr": [],
                   "retry": 0,
-                  "startTime": "2026-11-06T00:52:32.344Z",
+                  "startTime": "2026-11-06T03:30:10.314Z",
                   "annotations": [],
                   "attachments": []
                 }
@@ -295,13 +329,13 @@
               "status": "expected"
             }
           ],
-          "id": "85b3cc1667c06e9efc8f-b93075d881d864ae89fb",
+          "id": "85b3cc1667c06e9efc8f-9871d860248932b44ab2",
           "file": "features.spec.ts",
-          "line": 243,
+          "line": 241,
           "column": 5
         },
         {
-          "title": "AC3: deleting a child profile and the account removes them",
+          "title": "AC3: deleting a child account and the parent account removes them",
           "ok": true,
           "tags": [],
           "tests": [
@@ -316,12 +350,12 @@
                   "workerIndex": 0,
                   "parallelIndex": 0,
                   "status": "passed",
-                  "duration": 1384,
+                  "duration": 2535,
                   "errors": [],
                   "stdout": [],
                   "stderr": [],
                   "retry": 0,
-                  "startTime": "2026-11-06T00:53:19.371Z",
+                  "startTime": "2026-11-06T03:30:57.890Z",
                   "annotations": [],
                   "attachments": []
                 }
@@ -329,9 +363,9 @@
               "status": "expected"
             }
           ],
-          "id": "85b3cc1667c06e9efc8f-7b6f3bad26312fcadad0",
+          "id": "85b3cc1667c06e9efc8f-ccad2315dcc4feb5f417",
           "file": "features.spec.ts",
-          "line": 291,
+          "line": 287,
           "column": 5
         },
         {
@@ -344,7 +378,7 @@
               "annotations": [
                 {
                   "type": "browser-push-state",
-                  "description": "denied"
+                  "description": "error"
                 }
               ],
               "expectedStatus": "passed",
@@ -355,16 +389,16 @@
                   "workerIndex": 0,
                   "parallelIndex": 0,
                   "status": "passed",
-                  "duration": 6219,
+                  "duration": 5877,
                   "errors": [],
                   "stdout": [],
                   "stderr": [],
                   "retry": 0,
-                  "startTime": "2026-11-06T00:53:20.768Z",
+                  "startTime": "2026-11-06T03:31:00.441Z",
                   "annotations": [
                     {
                       "type": "browser-push-state",
-                      "description": "denied"
+                      "description": "error"
                     }
                   ],
                   "attachments": []
@@ -402,12 +436,12 @@
                   "workerIndex": 0,
                   "parallelIndex": 0,
                   "status": "passed",
-                  "duration": 468,
+                  "duration": 491,
                   "errors": [],
                   "stdout": [],
                   "stderr": [],
                   "retry": 0,
-                  "startTime": "2026-11-06T00:53:27.012Z",
+                  "startTime": "2026-11-06T03:31:06.342Z",
                   "annotations": [],
                   "attachments": []
                 }
@@ -417,11 +451,11 @@
           ],
           "id": "bf222bad70f76648f722-d72a9b06c7df770e2d4c",
           "file": "journey.spec.ts",
-          "line": 31,
+          "line": 13,
           "column": 5
         },
         {
-          "title": "full journey: signup → child → today → tracing → mock exam → chatbot → report",
+          "title": "full journey: login page → signup → child account → child login → today → tracing → exam → chatbot → report",
           "ok": true,
           "tags": [],
           "tests": [
@@ -436,12 +470,12 @@
                   "workerIndex": 0,
                   "parallelIndex": 0,
                   "status": "passed",
-                  "duration": 6170,
+                  "duration": 7747,
                   "errors": [],
                   "stdout": [],
                   "stderr": [],
                   "retry": 0,
-                  "startTime": "2026-11-06T00:53:27.494Z",
+                  "startTime": "2026-11-06T03:31:06.847Z",
                   "annotations": [],
                   "attachments": []
                 }
@@ -449,9 +483,9 @@
               "status": "expected"
             }
           ],
-          "id": "bf222bad70f76648f722-89570728f287178d2fd2",
+          "id": "bf222bad70f76648f722-48fdb5f243b1bb953dd3",
           "file": "journey.spec.ts",
-          "line": 61,
+          "line": 43,
           "column": 5
         },
         {
@@ -470,12 +504,12 @@
                   "workerIndex": 0,
                   "parallelIndex": 0,
                   "status": "passed",
-                  "duration": 1267,
+                  "duration": 1934,
                   "errors": [],
                   "stdout": [],
                   "stderr": [],
                   "retry": 0,
-                  "startTime": "2026-11-06T00:53:33.677Z",
+                  "startTime": "2026-11-06T03:31:14.610Z",
                   "annotations": [],
                   "attachments": []
                 }
@@ -485,7 +519,7 @@
           ],
           "id": "bf222bad70f76648f722-b3a6f3f8a8fe52e82ff9",
           "file": "journey.spec.ts",
-          "line": 132,
+          "line": 136,
           "column": 5
         }
       ]
@@ -493,9 +527,9 @@
   ],
   "errors": [],
   "stats": {
-    "startTime": "2026-11-06T00:51:14.091Z",
-    "duration": 144497.546,
-    "expected": 11,
+    "startTime": "2026-11-06T03:28:23.115Z",
+    "duration": 177266.936,
+    "expected": 12,
     "skipped": 0,
     "unexpected": 0,
     "flaky": 0

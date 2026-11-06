@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from accounts.service import AccountService, FakeIdentityVerifier  # noqa: E402
+from accounts.service import AccountService  # noqa: E402
 from app.main import hanja_by_body  # noqa: E402
 from chatbot.knowledge import HanjaKnowledge  # noqa: E402
 from chatbot.service import ChatbotService, postprocess  # noqa: E402
@@ -119,9 +119,8 @@ def test_chatbot_corrects_hun_eum_to_selected_body(body, expected):
 
 
 def _bot(body):
-    ver = FakeIdentityVerifier()
-    acc = AccountService(ver)
-    p = acc.signup_parent(ver.complete_verification("ci"), "p@x.kr", True, True, True)
+    acc = AccountService()
+    p = acc.signup_parent("p-ci", "parent-pw-1", "p@x.kr", True, True, True)
     ch = acc.create_child(p.id, "별이", "1234", ai_consent=True)
     ch.extra["target"] = (body, "8")
     seen = {}

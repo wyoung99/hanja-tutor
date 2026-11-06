@@ -1,15 +1,5 @@
 import { expect, Page, test } from "@playwright/test";
-
-type Pt = [number, number];
-
-async function draw(page: Page, pts: Pt[]) {
-  const box = (await page.getByTestId("stroke-pad").boundingBox())!;
-  const at = ([x, y]: Pt) => [box.x + (x / 1000) * box.width, box.y + (y / 1000) * box.height] as const;
-  await page.mouse.move(...at(pts[0]));
-  await page.mouse.down();
-  for (const p of pts.slice(1)) await page.mouse.move(...at(p), { steps: 6 });
-  await page.mouse.up();
-}
+import { addChild, CHILD_PW, childLogin, draw, logout, PARENT_PW, parentLogin, signup, uid, type Pt } from "./helpers";
 
 /** Real hanzi-writer medians for `ch` (same data the backend grades against), via the app's /api proxy. */
 async function medians(page: Page, ch: string): Promise<Pt[][]> {
@@ -18,14 +8,6 @@ async function medians(page: Page, ch: string): Promise<Pt[][]> {
   const body = await r.json();
   expect(body.mode).toBe("graded");
   return body.strokes;
-}
-
-async function signup(page: Page, email: string) {
-  await page.goto("/");
-  await page.getByTestId("email").fill(email);
-  for (const t of ["agree-terms", "agree-privacy", "agree-guardian"]) await page.getByTestId(t).check();
-  await page.getByTestId("signup").click();
-  await expect(page.getByTestId("nick")).toBeVisible();
 }
 
 test("installable: manifest + service worker", async ({ page, request }) => {
@@ -56,83 +38,105 @@ test("installable: manifest + service worker", async ({ page, request }) => {
   await page.context().setOffline(false);
 });
 
-// AC17: 가입·동의 → 자녀 프로필 → 오늘의 한자 → 따라쓰기 → 모의고사 → 챗봇 → 리포트.
+// AC17: 로그인/회원가입 → 자녀 계정 생성 → 자녀 로그인 → 오늘의 한자 → 따라쓰기 → 모의고사 → 챗봇 → (부모) 리포트.
 // Subscription payment/refund are implement-only (AC14/AC15 verification excluded) and not part of this E2E.
-test("full journey: signup → child → today → tracing → mock exam → chatbot → report", async ({ page }) => {
+test("full journey: login page → signup → child account → child login → today → tracing → exam → chatbot → report", async ({ page, browser }) => {
+  // landing page = login (one form for parents and children) with a link to the separate sign-up page
   await page.goto("/");
+  await expect(page.getByTestId("login-form")).toBeVisible();
+  await expect(page.getByTestId("signup-form")).toHaveCount(0);
+  await page.getByTestId("signup-link").click();
+  await expect(page).toHaveURL(/\/signup$/);
+  await expect(page.getByTestId("signup-form")).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("본인인증");
 
-  // 가입·동의 (consent is required)
+  // 회원가입: id + password + email + consents (consent is required; no phone verification)
+  const mom = uid("mom");
+  await page.getByTestId("signup-id").fill(mom);
+  await page.getByTestId("signup-password").fill(PARENT_PW);
+  await page.getByTestId("signup-confirm").fill(PARENT_PW);
   await page.getByTestId("email").fill("parent@example.com");
   await page.getByTestId("signup").click();
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.getByTestId("signup-error")).toContainText("동의");
   await page.getByTestId("agree-terms").check();
   await page.getByTestId("agree-privacy").check();
   await page.getByTestId("agree-guardian").check();
   await page.getByTestId("signup").click();
 
-  // 자녀 프로필 (닉네임 + PIN, AI 처리 동의, 기관·급수 선택)
-  await page.getByTestId("nick").fill("별이");
-  await page.getByTestId("pin").fill("1234");
-  await page.getByTestId("body").selectOption("korea_eomunhoe");
-  await page.getByTestId("grade").selectOption("8");
-  await page.getByTestId("ai-consent").check();
-  await page.getByTestId("add-child").click();
+  // parent: management menus only
+  await expect(page).toHaveURL(/\/$/);
+  const parentMenu = page.getByTestId("parent-menu");
+  await expect(parentMenu).toBeVisible();
+  for (const t of ["tab-kids", "tab-report", "tab-alerts", "tab-billing", "tab-account"]) await expect(page.getByTestId(t)).toBeVisible();
+  for (const t of ["tab-today", "tab-review", "tab-tracing", "tab-exam", "tab-chat"]) await expect(page.getByTestId(t)).toHaveCount(0);
+
+  // 자녀 계정 생성 (parent sets id + password + nickname, AI consent, body/grade)
+  const kid = uid("star");
+  await addChild(page, "별이", kid);
   await expect(page.getByTestId("child-card")).toHaveCount(1);
 
-  // 아이 모드: 오늘의 한자 (실제 DB 훈·음) + 따라쓰기 (실제 획순 데이터)
-  await page.getByTestId("enter-별이").click();
-  await page.getByTestId("child-pin").fill("1234");
-  await page.getByTestId("child-unlock").click();
-  const cards = page.getByTestId("today-card");
+  // 자녀 로그인 on the child's own device: learning menus only
+  const child = await browser.newPage();
+  await childLogin(child, kid);
+  for (const t of ["tab-today", "tab-review", "tab-tracing", "tab-exam", "tab-chat"]) await expect(child.getByTestId(t)).toBeVisible();
+  for (const t of ["tab-kids", "tab-report", "tab-alerts", "tab-billing", "tab-account", "parent-menu"]) await expect(child.getByTestId(t)).toHaveCount(0);
+
+  // 오늘의 한자 (실제 DB 훈·음) + 따라쓰기 (실제 획순 데이터)
+  const cards = child.getByTestId("today-card");
   await expect(cards.first()).toBeVisible();
   const n = await cards.count();
   expect(n).toBeGreaterThanOrEqual(3);
   expect(n).toBeLessThanOrEqual(15);
-  await expect(page.getByTestId("reading").first()).not.toHaveText(/^[훈음]\d+/);
-  const trace = page.locator('[data-testid^="trace-"]').first();
+  await expect(child.getByTestId("reading").first()).not.toHaveText(/^[훈음]\d+/);
+  const trace = child.locator('[data-testid^="trace-"]').first();
   const ch = (await trace.getAttribute("data-testid"))!.slice("trace-".length);
-  const strokes = await medians(page, ch);
+  const strokes = await medians(child, ch);
   expect(strokes.length).toBeGreaterThan(0);
   await trace.click();
-  await expect(page.getByTestId("stroke-pad")).toBeVisible();
-  for (const s of strokes) await draw(page, s); // follow each real median in order
-  await expect(page.getByTestId("trace-msg")).toContainText("통과");
-  await page.getByTestId("trace-finish").click();
-  await expect(page.getByTestId(`done-${ch}`)).toHaveCount(1);
+  await expect(child.getByTestId("stroke-pad")).toBeVisible();
+  for (const s of strokes) await draw(child, s); // follow each real median in order
+  await expect(child.getByTestId("trace-msg")).toContainText("통과");
+  await child.getByTestId("trace-finish").click();
+  await expect(child.getByTestId(`done-${ch}`)).toHaveCount(1);
+  await child.getByTestId("tab-review").click();
+  await expect(child.getByLabel("복습")).toBeVisible();
+  await child.getByTestId("tab-tracing").click();
+  await expect(child.getByTestId("tracing-card").first()).toBeVisible();
 
   // 모의고사 (실전형): 1회 응시 후 주간 한도 안내(구독 언급 없음)
-  await page.getByTestId("tab-exam").click();
-  await page.getByTestId("exam-start").click();
-  await expect(page.getByTestId("exam-question").first()).toBeVisible();
-  await expect(page.getByTestId("exam-question")).toHaveCount(50);
-  await page.locator('[data-testid="exam-question"] input[type="radio"]').first().check();
-  await page.getByTestId("exam-submit").click();
-  await expect(page.getByTestId("exam-score")).toContainText("점");
-  await expect(page.getByTestId("exam-pass")).toContainText(/합격|불합격/);
-  await page.getByTestId("tab-today").click();
-  await page.getByTestId("tab-exam").click();
-  await page.getByTestId("exam-start").click();
-  await expect(page.getByTestId("exam-msg")).toContainText("또 만나요");
-  await expect(page.getByTestId("exam-msg")).not.toContainText("구독");
+  await child.getByTestId("tab-exam").click();
+  await child.getByTestId("exam-start").click();
+  await expect(child.getByTestId("exam-question").first()).toBeVisible();
+  await expect(child.getByTestId("exam-question")).toHaveCount(50);
+  await child.locator('[data-testid="exam-question"] input[type="radio"]').first().check();
+  await child.getByTestId("exam-submit").click();
+  await expect(child.getByTestId("exam-score")).toContainText("점");
+  await expect(child.getByTestId("exam-pass")).toContainText(/합격|불합격/);
+  await child.getByTestId("tab-today").click();
+  await child.getByTestId("tab-exam").click();
+  await child.getByTestId("exam-start").click();
+  await expect(child.getByTestId("exam-msg")).toContainText("또 만나요");
+  await expect(child.getByTestId("exam-msg")).not.toContainText("구독");
 
   // 챗봇
-  await page.getByTestId("tab-chat").click();
-  await page.getByTestId("chat-input").fill("學이 뭐예요?");
-  await page.getByTestId("chat-send").click();
-  await expect(page.getByTestId("msg-bot").first()).toContainText("學");
+  await child.getByTestId("tab-chat").click();
+  await child.getByTestId("chat-input").fill("學이 뭐예요?");
+  await child.getByTestId("chat-send").click();
+  await expect(child.getByTestId("msg-bot").first()).toContainText("學");
+  await child.close();
 
   // 부모: 리포트 (기본은 무료, 상세는 구독 전용)
-  await page.getByRole("button", { name: "나가기" }).click();
   await page.getByTestId("tab-report").click();
   await expect(page.getByTestId("basic-report")).toContainText("학습 시간");
   await page.getByTestId("detail-report").click();
   await expect(page.getByTestId("detail-msg")).toContainText("구독 전용");
+  await logout(page);
 });
 
 test("준급: learning works and the mock exam uses the official 대한검정회 format", async ({ page }) => {
-  await signup(page, "jun@example.com");
+  const mom = uid("jun");
+  await signup(page, mom);
   await page.getByTestId("nick").fill("준이");
-  await page.getByTestId("pin").fill("1234");
   await page.getByTestId("body").selectOption("daegeom");
   await page.getByTestId("grade").selectOption("준5");
   await expect(page.getByTestId("grade-note")).toHaveCount(0);
@@ -140,10 +144,13 @@ test("준급: learning works and the mock exam uses the official 대한검정회
   await expect(page.getByTestId("grade-format")).toContainText("50문항 · 40분");
   await expect(page.getByTestId("grade-format")).toContainText("문항 기준 35/50문항");
   await expect(page.getByTestId("grade-format")).toContainText("모두 객관식");
+  const kid = uid("jun");
+  await page.getByTestId("child-login-id").fill(kid);
+  await page.getByTestId("child-password").fill(CHILD_PW);
   await page.getByTestId("add-child").click();
-  await page.getByTestId("enter-준이").click();
-  await page.getByTestId("child-pin").fill("1234");
-  await page.getByTestId("child-unlock").click();
+  await expect(page.getByTestId("child-created")).toContainText(kid);
+  await logout(page);
+  await childLogin(page, kid);
   await expect(page.getByTestId("today-card").first()).toBeVisible();
   await page.getByTestId("tab-exam").click();
   await page.getByTestId("exam-start").click();
@@ -155,4 +162,6 @@ test("준급: learning works and the mock exam uses the official 대한검정회
   await expect(page.getByTestId("exam-score")).toContainText("0 / 100점 · 0/50문항 맞힘");
   await expect(page.getByTestId("exam-by-type")).toContainText("훈음 고르기");
   await expect(page.getByTestId("exam-notice")).toHaveCount(0);
+  await logout(page);
+  await parentLogin(page, mom); // the parent can log in again on the same device
 });

@@ -1,0 +1,200 @@
+{
+ "channel": {
+  "item": [
+   {
+    "sense": [
+     {
+      "target_code": "184908",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "006",
+      "cat": "",
+      "origin": "沙果/砂果",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=184908",
+      "definition": "사과나무의 열매.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "사과"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "181737",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "007",
+      "cat": "",
+      "origin": "赦過",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=181737",
+      "definition": "잘못을 용서함.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "사과"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "181739",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "009",
+      "cat": "",
+      "origin": "謝過",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=181739",
+      "definition": "자기의 잘못을 인정하고 용서를 빎.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "사과"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "424473",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "001",
+      "cat": "식물",
+      "origin": "",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=424473",
+      "definition": "살이 연하고 달며 물이 많은 참외.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "사과"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "1328685",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "010",
+      "cat": "교육",
+      "origin": "四科",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=1328685",
+      "definition": "중세 서양의 기초 학문이었던 자유과의 한 갈래. 산술·기하·천문학·음악으로 구성되었다.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "사과"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "1471271",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "011",
+      "cat": "미술",
+      "origin": "沙果/砂果",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=1471271",
+      "definition": "이인성이 그린 그림. 1940년에 제작되었다.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "사과"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "387777",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "003",
+      "cat": "불교",
+      "origin": "四果",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=387777",
+      "definition": "소승 불교에서 이르는 깨달음의 네 단계. 수다원과, 사다함과, 아나함과, 아라한과의 단계가 있다.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "사과"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "181738",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "008",
+      "cat": "식물",
+      "origin": "絲瓜",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=181738",
+      "definition": "박과의 한해살이 덩굴풀. 줄기는 덩굴손으로 다른 물건을 감고 올라간다. 잎은 손바닥 모양으로 5~7갈래 갈라지고 잎자루가 길다. 여름에 노란 꽃이 총상(總狀) 화서로 피고 열매는 원통 모양의 긴 장과(漿果)로 녹색이다. 열매 속의 섬유로는 수세미를 만들고 줄기의 액으로는 화장수를 만든다. 열대 아시아가 원산지이다.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "사과"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "184907",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "002",
+      "cat": "역사",
+      "origin": "司果",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=184907",
+      "definition": "조선 시대에, 오위(五衛)에 둔 정육품의 군직(軍職). 현직에 종사하고 있지 않은 문관, 무관 및 음관(蔭官)이 맡았다.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "사과"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "368696",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "004",
+      "cat": "",
+      "origin": "四科",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=368696",
+      "definition": "유학의 네 가지 학과. 덕행, 언어, 정사(政事), 문학을 이른다.",
+      "type": "",
+      "syntacticArgument": ""
+     },
+     {
+      "target_code": "372231",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "005",
+      "cat": "종교 일반",
+      "origin": "四科",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=372231",
+      "definition": "천도교에서, 도를 닦는 네 과정. 곧 성(誠), 경(敬), 신(信), 법(法)을 이른다.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "사과"
+   }
+  ],
+  "total": 262,
+  "num": 10,
+  "link": "https://opendict.korean.go.kr",
+  "start": 1,
+  "description": "우리말샘 개발 지원(Open API) - 사전 어휘 검색 결과",
+  "lastbuilddate": "20261106113539",
+  "title": "우리말샘 개발 지원(Open API) - 사전 어휘 검색"
+ },
+ "_fixture": {
+  "source": "https://opendict.korean.go.kr/api/search (req_type=json, num=10), captured 2026-11-06",
+  "query": "사과",
+  "hanja_field": "channel.item[].sense[].origin (원어)"
+ }
+}

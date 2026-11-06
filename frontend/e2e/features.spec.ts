@@ -1,117 +1,109 @@
-import { expect, Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import {
+  addChild, bearer, CHILD_PW, childLogin, draw, login, logout, PARENT_PW, parentLogin, resetClock, shiftClock,
+  signup, uid, type Pt,
+} from "./helpers";
 
 // Feature E2E for AC2-AC11 against the local stack (uvicorn + next start, see playwright.config.ts).
-// Time-dependent flows use the non-production POST /api/dev/clock shift and always reset it.
+// Parents and children log in with id + password on the landing page (the server decides the role); a child
+// device is a separate browser page. Time-dependent flows use the non-production POST /api/dev/clock shift
+// and always reset it.
 
-type Pt = [number, number];
-let seq = 0;
-const uniq = (p: string) => `${p}${Date.now()}${seq++}@example.com`;
-
-async function draw(page: Page, pts: Pt[]) {
-  const box = (await page.getByTestId("stroke-pad").first().boundingBox())!;
-  const at = ([x, y]: Pt) => [box.x + (x / 1000) * box.width, box.y + (y / 1000) * box.height] as const;
-  await page.mouse.move(...at(pts[0]));
-  await page.mouse.down();
-  for (const p of pts.slice(1)) await page.mouse.move(...at(p), { steps: 6 });
-  await page.mouse.up();
-}
-
-async function signup(page: Page, email: string) {
+test("AC2: login page is the landing route, /signup is separate, no phone verification anywhere", async ({ page }) => {
   await page.goto("/");
-  await page.getByTestId("email").fill(email);
+  await expect(page.getByTestId("login-form")).toBeVisible();
+  await expect(page.getByTestId("signup-link")).toHaveAttribute("href", "/signup");
+  expect((await page.request.post("/api/dev/verify", { data: { ci: "x" } })).status()).toBe(404);
+  await page.goto("/signup");
+  await expect(page.getByTestId("signup-form")).toBeVisible();
+  await expect(page.getByTestId("login-form")).toHaveCount(0);
+  const id = uid("dup");
+  await signup(page, id);
+  await logout(page);
+  // the same id (case-insensitive) cannot be registered twice
+  await page.goto("/signup");
+  await page.getByTestId("signup-id").fill(id.toUpperCase());
+  await page.getByTestId("signup-password").fill(PARENT_PW);
+  await page.getByTestId("signup-confirm").fill(PARENT_PW);
+  await page.getByTestId("email").fill("dup2@example.com");
   for (const t of ["agree-terms", "agree-privacy", "agree-guardian"]) await page.getByTestId(t).check();
   await page.getByTestId("signup").click();
-  await expect(page.getByTestId("nick")).toBeVisible();
-}
+  await expect(page.getByTestId("signup-error")).toContainText("이미 쓰고 있는 아이디");
+  // wrong password
+  await login(page, id, "wrong-pass-1");
+  await expect(page.getByTestId("login-error")).toContainText("아이디 또는 비밀번호가 달라요");
+  await parentLogin(page, id);
+});
 
-async function login(page: Page, email: string) {
-  await page.goto("/");
-  await page.getByTestId("email").fill(email);
-  await page.getByTestId("login").click();
-  await expect(page.getByTestId("nick")).toBeVisible();
-}
+test("AC2: parent-created child account; no AI consent disables only the chatbot; 5 wrong passwords lock; parent reset unlocks; child is refused on parent APIs", async ({ page, browser }) => {
+  const mom = uid("con");
+  const kid = uid("sol");
+  await signup(page, mom);
+  await addChild(page, "솔이", kid, { consent: false });
 
-async function addChild(page: Page, nick: string, opts: { consent?: boolean; body?: string; grade?: string } = {}) {
-  await page.getByTestId("nick").fill(nick);
-  await page.getByTestId("pin").fill("1234");
-  await page.getByTestId("body").selectOption(opts.body ?? "korea_eomunhoe");
-  await page.getByTestId("grade").selectOption(opts.grade ?? "8");
-  if (opts.consent ?? true) await page.getByTestId("ai-consent").check();
-  await page.getByTestId("add-child").click();
-  await expect(page.getByTestId(`enter-${nick}`)).toBeVisible();
-}
-
-async function enter(page: Page, nick: string, pin = "1234"): Promise<string> {
-  await page.getByTestId(`enter-${nick}`).click();
-  await page.getByTestId("child-pin").fill(pin);
-  const hb = page.waitForResponse((r) => r.url().includes("/heartbeat"));
-  await page.getByTestId("child-unlock").click();
-  const url = (await hb).url();
-  return url.split("/children/")[1].split("/")[0]; // child id
-}
-
-async function shiftClock(page: Page, minutes: number) {
-  const r = await page.request.post("/api/dev/clock", { data: { advance_minutes: minutes } });
-  expect(r.ok()).toBeTruthy();
-}
-const resetClock = (page: Page) => page.request.post("/api/dev/clock", { data: { reset: true } });
-
-test("AC2: no AI consent disables only the chatbot; 5 wrong PINs lock; parent reset unlocks", async ({ page }) => {
-  await signup(page, uniq("consent"));
-  await addChild(page, "솔이", { consent: false });
-  await enter(page, "솔이");
-  await expect(page.getByTestId("today-card").first()).toBeVisible(); // learning still works
-  await page.getByTestId("tab-chat").click();
-  await expect(page.getByTestId("chat-disabled")).toBeVisible();
-  await page.getByRole("button", { name: "나가기" }).click();
-
-  await page.getByTestId("enter-솔이").click();
-  for (let i = 0; i < 4; i++) {
-    await page.getByTestId("child-pin").fill("0000");
-    await page.getByTestId("child-unlock").click();
-    await expect(page.getByTestId("pin-error")).toContainText(`${4 - i}번 남았어요`);
+  const child = await browser.newPage();
+  await childLogin(child, kid);
+  await expect(child.getByTestId("today-card").first()).toBeVisible(); // learning still works
+  await child.getByTestId("tab-chat").click();
+  await expect(child.getByTestId("chat-disabled")).toBeVisible();
+  // child UI has learning menus only, and the server refuses the child's session on parent APIs
+  await expect(child.getByTestId("child-menu")).not.toContainText(/자녀|리포트|알림|구독|계정/);
+  const auth = await bearer(child);
+  for (const url of ["/api/children", "/api/parents/me/notifications", "/api/billing/subscription"]) {
+    const r = await child.request.get(url, { headers: auth });
+    expect(r.status(), url).toBe(403);
+    expect((await r.json()).detail.code).toBe("parent_only");
   }
-  await page.getByTestId("child-pin").fill("0000");
-  await page.getByTestId("child-unlock").click();
-  await expect(page.getByTestId("pin-error")).toContainText("잠겼어요");
-  await page.getByTestId("child-pin").fill("1234");
-  await page.getByTestId("child-unlock").click();
-  await expect(page.getByTestId("pin-error")).toContainText("잠겼어요"); // even the right PIN
-  await page.getByRole("button", { name: "뒤로" }).click();
+  await logout(child);
 
+  // 5 wrong passwords lock the child account (even the right one is refused afterwards)
+  for (let i = 0; i < 4; i++) {
+    await login(child, kid, "0000");
+    await expect(child.getByTestId("login-error")).toContainText(`${4 - i}번 더 틀리면 잠겨요`);
+  }
+  await login(child, kid, "0000");
+  await expect(child.getByTestId("login-error")).toContainText("잠겼어요");
+  await login(child, kid, CHILD_PW);
+  await expect(child.getByTestId("login-error")).toContainText("잠겼어요");
+
+  // the parent sets a new password from the parent screen -> unlocked
   await page.getByTestId("tab-kids").click();
   await expect(page.getByTestId("locked-솔이")).toBeVisible();
-  await page.getByTestId("pin-솔이").click();
-  await page.getByTestId("newpin-솔이").fill("5678");
-  await page.getByTestId("resetpin-솔이").click();
+  await page.getByTestId("password-솔이").click();
+  await page.getByTestId("newpassword-솔이").fill("5678");
+  await page.getByTestId("resetpassword-솔이").click();
   await expect(page.getByTestId("child-msg-솔이")).toContainText("잠금이 풀렸어요");
   await expect(page.getByTestId("locked-솔이")).toHaveCount(0);
   await page.getByTestId("consent-솔이").click(); // controlled checkbox: state follows the API response
   await expect(page.getByTestId("consent-솔이")).toBeChecked();
 
-  await enter(page, "솔이", "5678");
-  await page.getByTestId("tab-chat").click();
-  await page.getByTestId("chat-input").fill("學이 뭐예요?");
-  await page.getByTestId("chat-send").click();
-  await expect(page.getByTestId("msg-bot").last()).toContainText("學");
+  await childLogin(child, kid, "5678");
+  await child.getByTestId("tab-chat").click();
+  await child.getByTestId("chat-input").fill("學이 뭐예요?");
+  await child.getByTestId("chat-send").click();
+  await expect(child.getByTestId("msg-bot").last()).toContainText("學");
+  await child.close();
 });
 
 test("AC4: parent edits the daily count and the child's today list follows", async ({ page }) => {
-  await signup(page, uniq("plan"));
-  await addChild(page, "계획이", { grade: "7" });
+  const kid = uid("plan");
+  await signup(page, uid("plp"));
+  await addChild(page, "계획이", kid, { grade: "7" });
   await page.getByTestId("plan-계획이").click();
   await page.getByTestId("plan-count").fill("5");
   await page.getByTestId("plan-save").click();
   await expect(page.getByTestId("plan-summary")).toContainText("오늘 새 한자 5자");
-  await enter(page, "계획이");
+  await logout(page);
+  await childLogin(page, kid);
   await expect(page.getByTestId("today-card")).toHaveCount(5);
 });
 
 test("AC6: leaving resumes the exam with the timer running; time-out auto-submits with per-type results", async ({ page }) => {
-  const email = uniq("exam");
-  await signup(page, email);
-  await addChild(page, "시험이");
-  await enter(page, "시험이");
+  const kid = uid("exam");
+  await signup(page, uid("exp"));
+  await addChild(page, "시험이", kid);
+  await logout(page);
+  await childLogin(page, kid);
   await page.getByTestId("tab-exam").click();
   await page.getByTestId("exam-start").click();
   await expect(page.getByTestId("exam-question")).toHaveCount(50);
@@ -126,10 +118,11 @@ test("AC6: leaving resumes the exam with the timer running; time-out auto-submit
   await expect(page.getByTestId("exam-running")).toHaveAttribute("data-exam-id", examId!);
   await expect(page.locator('[data-testid="exam-question"]').first().locator('input[type="radio"]:checked')).toHaveCount(1);
 
-  // close the app entirely (reload), log in again: same exam, timer kept running
+  // close the app entirely (reload: still logged in), then log out and in again: same exam, timer kept running
   await page.reload();
-  await login(page, email);
-  await enter(page, "시험이");
+  await expect(page.getByTestId("child-menu")).toBeVisible();
+  await logout(page);
+  await childLogin(page, kid);
   await page.getByTestId("tab-exam").click();
   await expect(page.getByTestId("exam-running")).toHaveAttribute("data-exam-id", examId!);
   try {
@@ -153,9 +146,12 @@ test("AC6: leaving resumes the exam with the timer running; time-out auto-submit
 });
 
 test("AC7: a wrong stroke turns red at once; the 3rd error shows the answer stroke; result is retry", async ({ page }) => {
-  await signup(page, uniq("stroke"));
-  await addChild(page, "획이");
-  await enter(page, "획이");
+  const kid = uid("stroke");
+  await signup(page, uid("stp"));
+  await addChild(page, "획이", kid);
+  await logout(page);
+  await childLogin(page, kid);
+  await page.getByTestId("tab-tracing").click();
   const trace = page.locator('[data-testid^="trace-"]').first();
   const ch = (await trace.getAttribute("data-testid"))!.slice("trace-".length);
   const strokes: Pt[][] = (await (await page.request.get(`/api/strokes/${encodeURIComponent(ch)}`)).json()).strokes;
@@ -176,10 +172,12 @@ test("AC7: a wrong stroke turns red at once; the 3rd error shows the answer stro
 });
 
 test("AC9/AC10/AC12: streamed answers, retry after error and 15s timeout, resume a thread, parent view and delete", async ({ page }) => {
-  const email = uniq("chat");
-  await signup(page, email);
-  await addChild(page, "챗이");
-  const cid = await enter(page, "챗이");
+  const mom = uid("chp");
+  const kid = uid("chat");
+  await signup(page, mom);
+  await addChild(page, "챗이", kid);
+  await logout(page);
+  const cid = await childLogin(page, kid);
   await page.getByTestId("tab-chat").click();
   await page.getByTestId("chat-input").fill("學이 뭐예요?");
   await page.getByTestId("chat-send").click();
@@ -206,16 +204,15 @@ test("AC9/AC10/AC12: streamed answers, retry after error and 15s timeout, resume
   await page.getByTestId("chat-retry").click();
   await expect(page.getByTestId("chat-failed")).toHaveCount(0);
   await expect(page.getByTestId("msg-bot").nth(2)).toContainText("學"); // the retried answer arrived (not just started)
-  const used = (await (await page.request.get(`/api/children/${cid}/usage`)).json()).chatbot.used;
+  const used = (await (await page.request.get(`/api/children/${cid}/usage`, { headers: await bearer(page) })).json()).chatbot.used;
   expect(used).toBe(3); // only the 3 answered questions count
   await page.getByTestId("chat-input").fill("씨발");
   await page.getByTestId("chat-send").click();
   await expect(page.getByTestId("msg-bot").last()).toContainText("다룰 수 없어요");
 
-  // reopen the app (reload + login, like another device) and continue the earlier thread
-  await page.reload();
-  await login(page, email);
-  await enter(page, "챗이");
+  // reopen the app (log out and in again, like another device) and continue the earlier thread
+  await logout(page);
+  await childLogin(page, kid);
   await page.getByTestId("tab-chat").click();
   await expect(page.getByTestId("thread-item")).toHaveCount(1);
   await page.getByTestId("thread-item").click();
@@ -226,7 +223,8 @@ test("AC9/AC10/AC12: streamed answers, retry after error and 15s timeout, resume
   await expect(page.getByTestId("thread-item")).toHaveCount(1);
 
   // parent: conversation viewing + safety events (free), then delete -> gone everywhere
-  await page.getByRole("button", { name: "나가기" }).click();
+  await logout(page);
+  await parentLogin(page, mom);
   await page.getByTestId("tab-report").click();
   await page.getByTestId("pc-thread").click();
   await expect(page.getByTestId("pc-messages")).toContainText("學이 뭐예요?");
@@ -234,27 +232,25 @@ test("AC9/AC10/AC12: streamed answers, retry after error and 15s timeout, resume
   await expect(page.getByTestId("safety-events")).not.toContainText("씨발");
   await page.getByTestId("pc-delete").first().click();
   await expect(page.getByTestId("pc-thread")).toHaveCount(0);
-  await page.getByTestId("tab-kids").click();
-  await enter(page, "챗이");
+  await logout(page);
+  await childLogin(page, kid);
   await page.getByTestId("tab-chat").click();
   await expect(page.getByTestId("thread-item")).toHaveCount(0);
 });
 
-test("AC11: daily limit -> 5-minute notice -> lock; extension request approved by parent; parent PIN adds time", async ({ page, browser }) => {
-  const email = uniq("time");
-  await signup(page, email);
-  await page.getByTestId("tab-alerts").click();
-  await page.getByTestId("parent-pin").fill("9999");
-  await page.getByTestId("parent-pin-save").click();
-  await expect(page.getByTestId("parent-pin-msg")).toContainText("저장");
-  await page.getByTestId("tab-kids").click();
-  await addChild(page, "시간이");
+test("AC11: daily limit -> 5-minute notice -> lock; extension request approved by parent; parent password adds time", async ({ page, browser }) => {
+  const mom = uid("tim");
+  const kid = uid("time");
+  await signup(page, mom);
+  await addChild(page, "시간이", kid);
   await page.getByTestId("time-시간이").click();
   await page.getByTestId("st-daily").fill("10");
   await page.getByTestId("st-save").click();
   await expect(page.getByTestId("st-msg")).toContainText("저장");
-  const cid = await enter(page, "시간이");
-  const beat = () => page.request.post(`/api/children/${cid}/heartbeat`);
+  await logout(page);
+  const cid = await childLogin(page, kid);
+  const auth = await bearer(page);
+  const beat = () => page.request.post(`/api/children/${cid}/heartbeat`, { headers: auth });
   try {
     for (let i = 0; i < 3; i++) { await shiftClock(page, 2); await beat(); } // 6 of 10 minutes used
     await expect(page.getByTestId("time-warning")).toBeVisible({ timeout: 20_000 });
@@ -265,7 +261,7 @@ test("AC11: daily limit -> 5-minute notice -> lock; extension request approved b
     await page.getByTestId("ask-extension").click();
     await expect(page.getByTestId("lock-msg")).toContainText("물어봤어요");
     const parent = await browser.newPage();
-    await login(parent, email);
+    await parentLogin(parent, mom);
     await parent.getByTestId("tab-alerts").click();
     await expect(parent.getByTestId("note-extension_request")).toBeVisible();
     await parent.getByTestId("ext-approve").click();
@@ -273,13 +269,13 @@ test("AC11: daily limit -> 5-minute notice -> lock; extension request approved b
     await expect(page.getByTestId("app-locked")).toHaveCount(0, { timeout: 15_000 });
     await expect(page.getByTestId("tab-today")).toBeVisible();
 
-    // use up the extra 15 minutes, then the parent types their PIN on the child's device
+    // use up the extra 15 minutes, then the parent types their ACCOUNT password on the child's device
     for (let i = 0; i < 8; i++) { await shiftClock(page, 2); await beat(); }
     await expect(page.getByTestId("app-locked")).toBeVisible({ timeout: 20_000 });
-    await page.getByTestId("parent-pin-extra").fill("0000");
+    await page.getByTestId("parent-password-extra").fill(CHILD_PW); // the child's own password does not work
     await page.getByTestId("grant-extra").click();
-    await expect(page.getByTestId("lock-msg")).toContainText("PIN이 달라요");
-    await page.getByTestId("parent-pin-extra").fill("9999");
+    await expect(page.getByTestId("lock-msg")).toContainText("비밀번호가 달라요");
+    await page.getByTestId("parent-password-extra").fill(PARENT_PW);
     await page.getByTestId("grant-extra").click();
     await expect(page.getByTestId("app-locked")).toHaveCount(0, { timeout: 10_000 });
     await parent.close();
@@ -288,27 +284,30 @@ test("AC11: daily limit -> 5-minute notice -> lock; extension request approved b
   }
 });
 
-test("AC3: deleting a child profile and the account removes them", async ({ page }) => {
+test("AC3: deleting a child account and the parent account removes them", async ({ page }) => {
   page.on("dialog", (d) => d.accept());
-  const email = uniq("del");
-  await signup(page, email);
-  await addChild(page, "지울이");
-  await addChild(page, "남을이");
+  const mom = uid("del");
+  const gone = uid("gone");
+  await signup(page, mom);
+  await addChild(page, "지울이", gone);
+  await addChild(page, "남을이", uid("stay"));
   await page.getByTestId("delete-지울이").click();
-  await expect(page.getByTestId("enter-지울이")).toHaveCount(0);
-  await expect(page.getByTestId("enter-남을이")).toBeVisible();
+  await expect(page.getByTestId("login-id-지울이")).toHaveCount(0);
+  await expect(page.getByTestId("login-id-남을이")).toBeVisible();
+  await logout(page);
+  await login(page, gone, CHILD_PW); // the deleted child account cannot log in
+  await expect(page.getByTestId("login-error")).toContainText("아이디 또는 비밀번호가 달라요");
+  await parentLogin(page, mom);
   await page.getByTestId("tab-account").click();
   await page.getByTestId("delete-account").click();
-  await expect(page.getByTestId("signup")).toBeVisible();
-  await page.getByTestId("email").fill(email);
-  await page.getByTestId("login").click();
-  await expect(page.locator("p.err")).toContainText("login_failed");
+  await expect(page.getByTestId("login-form")).toBeVisible();
+  await login(page, mom, PARENT_PW);
+  await expect(page.getByTestId("login-error")).toContainText("아이디 또는 비밀번호가 달라요");
 });
 
 test("AC8/AC11/AC12/AC13: parent turns on Web Push (VAPID key from the API) and gets a test alert", async ({ page, context }) => {
-  const email = uniq("push");
   await context.grantPermissions(["notifications"], { origin: "http://127.0.0.1:3100" });
-  await signup(page, email);
+  await signup(page, uid("push"));
   await page.getByTestId("tab-alerts").click();
   const state = page.getByTestId("push-state");
   await expect(state).not.toHaveAttribute("data-state", "loading");

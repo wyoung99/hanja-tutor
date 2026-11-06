@@ -17,6 +17,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 from fastapi.testclient import TestClient
 
+import auth_helpers as A  # noqa: E402
 from app.main import Clock, create_app
 from billing import RecordingEmail
 from notifications import (FakePushSender, InvalidSubscription, NotificationCenter, PushSubscription, VapidConfig,
@@ -53,16 +54,13 @@ def make(sender=None, env=None):
     return TestClient(app), clock, app.state.services, sender
 
 
-def login(c, ci="ci-push"):
-    tok = c.post("/api/dev/verify", json={"ci": ci}).json()["verification_token"]
-    c.post("/api/parents/signup", json={"verification_token": tok, "email": f"{ci}@x.kr", "agree_terms": True,
-                                        "agree_privacy": True, "agree_legal_guardian": True})
-    tok = c.post("/api/dev/verify", json={"ci": ci}).json()["verification_token"]
-    return {"Authorization": "Bearer " + c.post("/api/parents/login", json={"verification_token": tok}).json()["session"]}
+def login(c, uid="ci-push"):
+    """Parent id/password sign-up + login (email = <id>@x.kr); the session is the client's default header."""
+    return A.parent(c, uid)
 
 
 def kid(c, H, nick="별이"):
-    cid = c.post("/api/children", headers=H, json={"nickname": nick, "pin": "1234", "ai_consent": True}).json()["id"]
+    cid = A.new_child(c, H, nick)
     c.put(f"/api/children/{cid}/target", headers=H, json={"body": "korea_eomunhoe", "grade": "8"})
     return cid
 

@@ -13,6 +13,7 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
+import auth_helpers as A
 from app.main import Clock, create_app
 from db.state import TABLES
 from notifications import FakePushSender, generate_vapid_keys
@@ -55,16 +56,13 @@ def apps(pg_db):
         conn.close()
 
 
-def signup(c, ci="ci-pg"):
-    tok = c.post("/api/dev/verify", json={"ci": ci}).json()["verification_token"]
-    assert c.post("/api/parents/signup", json={"verification_token": tok, "email": f"{ci}@x.kr", "agree_terms": True,
-                                               "agree_privacy": True, "agree_legal_guardian": True}).status_code == 201
-    tok = c.post("/api/dev/verify", json={"ci": ci}).json()["verification_token"]
-    return {"Authorization": "Bearer " + c.post("/api/parents/login", json={"verification_token": tok}).json()["session"]}
+def signup(c, uid="mom-pg"):
+    """Parent id/password sign-up + login (the session is also the client's default header)."""
+    return A.parent(c, uid)
 
 
-def kid(c, H, nick="별이"):
-    cid = c.post("/api/children", headers=H, json={"nickname": nick, "pin": "1234", "ai_consent": True}).json()["id"]
+def kid(c, H, nick="별이", login_id=None):
+    cid = A.new_child(c, H, nick, login_id=login_id)
     assert c.put(f"/api/children/{cid}/target", headers=H, json={"body": "korea_eomunhoe", "grade": "8"}).status_code == 200
     return cid
 
@@ -84,7 +82,11 @@ def test_restart_keeps_accounts_and_learning_state(apps, pg_db):
     c = a.c
     assert c.get("/api/health").json()["state_store"] == "postgres"
     H = signup(c)
-    cid = kid(c, H)
+    cid = kid(c, H, login_id="star-pg")
+    K = A.child_login(c, "star-pg")
+    c.headers.update(K)  # learning below runs in the CHILD's session (parent calls pass headers=H)
+    for _ in range(2):  # two wrong child passwords: the failure counter must survive the restart too
+        assert A.login(c, "star-pg", "wrong").status_code == 401
     # parent edits, learning, tracing, exam in progress, screen time, chat, safety, billing, push
     assert c.put(f"/api/children/{cid}/plan", headers=H, json={"exam_date": "2026-12-20", "daily_count": 5}).status_code == 200
     today = c.get(f"/api/children/{cid}/today").json()
@@ -97,7 +99,6 @@ def test_restart_keeps_accounts_and_learning_state(apps, pg_db):
     q = ex["questions"][0]
     c.post(f"/api/exams/{ex['exam_id']}/answer", json={"question_id": q["id"], "value": q["options"][0]})
     assert c.put(f"/api/children/{cid}/screentime", headers=H, json={"daily_minutes": 60, "windows": []}).status_code == 200
-    assert c.put("/api/parents/me/pin", headers=H, json={"pin": "9999"}).status_code == 200
     c.post(f"/api/children/{cid}/heartbeat")
     a.clock.offset = timedelta(minutes=1)
     c.post(f"/api/children/{cid}/heartbeat")
@@ -129,6 +130,7 @@ def test_restart_keeps_accounts_and_learning_state(apps, pg_db):
     # ---- "restart": a brand-new app on the same database; the parent's session token still works ----
     b = apps(clock=Clock(T0 + timedelta(minutes=2)))
     c2 = b.c
+    c2.headers.update(K)  # the child's session token survived the restart as well
     assert c2.get("/api/children", headers=H).json() == before["children"]
     assert c2.get(f"/api/children/{cid}/plan", headers=H).json() == before["plan"]
     assert c2.get(f"/api/children/{cid}/today").json() == before["today"]  # same frozen day plan
@@ -148,19 +150,52 @@ def test_restart_keeps_accounts_and_learning_state(apps, pg_db):
     assert len(c2.get("/api/parents/me/push-subscriptions", headers=H).json()) == 1
     # state keeps evolving after the restart: parent approves the request with a push-capable inbox
     assert c2.post(f"/api/parents/me/extension-requests/{req['id']}", headers=H, json={"approve": True}).status_code == 200
-    assert c2.post(f"/api/children/{cid}/screentime/extra",
-                   json={"parent_pin": "9999", "minutes": 5}).status_code == 200  # parent PIN survived
+    assert c2.post(f"/api/children/{cid}/screentime/extra",  # parent's account password (hash survived)
+                   json={"parent_password": A.PARENT_PW, "minutes": 5}).status_code == 200
     c2.post(f"/api/children/{cid}/chat", json={"message": "校는 뭐예요?"})
     assert c2.get(f"/api/children/{cid}/usage").json()["chatbot"]["used"] == 2
     tid = before["threads"][0]["thread_id"]
     assert len(c2.get(f"/api/children/{cid}/threads/{tid}").json()["messages"]) == 2
-    # signing up the same identity again is refused (CI index restored)
-    tok = c2.post("/api/dev/verify", json={"ci": "ci-pg"}).json()["verification_token"]
-    again = c2.post("/api/parents/signup", json={"verification_token": tok, "email": "z@x.kr", "agree_terms": True,
-                                                 "agree_privacy": True, "agree_legal_guardian": True})
-    assert again.status_code == 422 and "already_registered" in again.text
+    # accounts survive the restart: id/password login for both roles, ids stay taken (login index restored)
+    assert A.login(c2, "MOM-PG", A.PARENT_PW).json()["role"] == "parent"
+    assert A.login(c2, "mom-pg", "wrong-pass-1").status_code == 401
+    r = A.login(c2, "star-pg", "wrong")
+    assert r.status_code == 401 and r.json()["detail"]["remaining"] == 2  # 3rd failure of 5 (persisted)
+    assert A.login(c2, "star-pg", A.CHILD_PW).json()["role"] == "child"
+    again = A.signup(c2, "Star-PG")
+    assert again.status_code == 409 and again.json()["detail"]["code"] == "login_id_taken"
     assert count(pg_db, "parents") == 1 and count(pg_db, "children") == 1
     assert count(pg_db, "review_items", "child_id = %s", (cid,)) >= 1
+
+
+def test_passwords_are_never_stored_in_plaintext(apps, pg_db):
+    a = apps()
+    c = a.c
+    H = signup(c, "plain-check")
+    cid = kid(c, H, login_id="plain-kid")
+    K = A.child_login(c, "plain-kid")
+    extra = f"/api/children/{cid}/screentime/extra"
+    c.post(extra, headers=K, json={"parent_password": "typo-pw-1", "minutes": 5})  # a wrong try is stored as a count
+    c.post(f"/api/children/{cid}/reset-password", headers=H, json={"password": "newkid99"})
+    a.close()
+    conn = psycopg.connect(pg_db, autocommit=True)
+    try:
+        dump = " ".join(str(row) for t in TABLES for row in conn.execute(f"SELECT key, doc::text FROM {t}"))
+        docs = [r[0] for r in conn.execute("SELECT doc FROM parents UNION ALL SELECT doc FROM children")]
+    finally:
+        conn.close()
+    for secret in (A.PARENT_PW, A.CHILD_PW, "newkid99", "typo-pw-1"):
+        assert secret not in dump, secret
+    assert len(docs) == 2
+    for d in docs:
+        assert d["password_hash"].startswith("scrypt$16384$8$1$") and len(d["password_hash"].split("$")) == 6
+        assert not any(k in d for k in ("password", "pin_hash", "pin_salt", "ci_hash"))
+    assert count(pg_db, "parent_password_failures") == 1 and count(pg_db, "child_sessions") == 0  # reset signs out
+    with psycopg.connect(pg_db, autocommit=True) as conn2:  # the obsolete parent PIN table is gone (schema v2)
+        assert conn2.execute("SELECT to_regclass('parent_pins')").fetchone()[0] is None
+    conn = _CONNS.pop(pg_db, None)
+    if conn is not None:
+        conn.close()
 
 
 def test_usage_counting_is_atomic_across_two_servers_on_one_database(pg_db):
@@ -195,10 +230,12 @@ def test_usage_counting_is_atomic_across_two_servers_on_one_database(pg_db):
 def test_two_devices_racing_over_http_never_pass_the_limit(apps):
     a = apps()
     H = signup(a.c)
-    cid = kid(a.c, H)
+    cid = kid(a.c, H, login_id="race-kid")
+    K = A.child_login(a.c, "race-kid")  # both devices are logged in as the child
 
     def ask(i):
-        return TestClient(a.app).post(f"/api/children/{cid}/chat", json={"message": "學이 뭐예요?"}).json()["status"]
+        return TestClient(a.app).post(f"/api/children/{cid}/chat", headers=K,
+                                      json={"message": "學이 뭐예요?"}).json()["status"]
 
     with ThreadPoolExecutor(12) as pool:
         statuses = list(pool.map(ask, range(30)))
@@ -210,7 +247,8 @@ def test_child_deletion_leaves_zero_rows_and_account_deletion_archives_payments(
     a = apps()
     c = a.c
     H = signup(c)
-    cid, cid2 = kid(c, H), kid(c, H, "달이")
+    cid, cid2 = kid(c, H, login_id="del-kid"), kid(c, H, "달이")
+    A.child_login(c, "del-kid")  # a child session row (child_sessions) that must go with the child
     for x in (cid, cid2):
         today = c.get(f"/api/children/{x}/today").json()
         c.post(f"/api/children/{x}/today/{today['new'][0]['char']}/complete")
@@ -223,7 +261,7 @@ def test_child_deletion_leaves_zero_rows_and_account_deletion_archives_payments(
     assert c.post("/api/billing/subscribe", headers=H, json={"plan_id": "monthly", "auth_key": "ak"}).status_code == 201
     c.get(f"/api/children/{cid}/report/detailed", headers=H)  # paid-use event row for the child
     tables_with_child = [t for t in TABLES if count(pg_db, t, "child_id = %s", (cid,))]
-    assert {"children", "study_plans", "review_items", "mock_exams", "safety_events", "screentime_days",
+    assert {"children", "child_sessions", "study_plans", "review_items", "mock_exams", "safety_events", "screentime_days",
             "extension_requests", "notifications", "paid_usage_events"} <= set(tables_with_child)
     assert count(pg_db, "usage_counters", "child_id = %s", (cid,)) >= 1
     tids = [t["thread_id"] for t in c.get(f"/api/children/{cid}/threads").json()]

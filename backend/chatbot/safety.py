@@ -127,10 +127,12 @@ def rule_gate(text: str) -> Optional[Gate]:
     return Gate("block", harm, "rule") if harm else None
 
 
-def gate_from_label(text: str, label: Optional[str]) -> Gate:
+def gate_from_label(text: str, label: Optional[str], word_on_topic: bool = False) -> Gate:
     """Second stage for a message the rules did not block. label: the LLM classifier's label, or None when
-    no classifier is configured (rules only)."""
-    on_topic = rule_on_topic(text)
+    no classifier is configured (rules only). word_on_topic: the message is a short Hangul word question that
+    우리말샘 resolved to a hanja word ("학교" -> 學校, chatbot.wordquery) - on-topic by rule like a message
+    containing hanja, so OFF_TOPIC cannot redirect it; PII / HARMFUL still block."""
+    on_topic = word_on_topic or rule_on_topic(text)
     if label is not None:
         if label == "PII":
             return Gate("block", "pii", "llm")
@@ -142,7 +144,8 @@ def gate_from_label(text: str, label: Optional[str]) -> Gate:
     return Gate("allow") if on_topic else Gate("redirect", "off_topic", "rule")
 
 
-def gate_message(text: str, classifier: Optional[LLMClassifier] = None) -> Gate:
+def gate_message(text: str, classifier: Optional[LLMClassifier] = None, word_on_topic: bool = False) -> Gate:
     """rule_gate, then the classifier (if any). The streaming path runs the same two stages but overlaps
     the classifier call with answer generation (chatbot.streaming)."""
-    return rule_gate(text) or gate_from_label(text, classifier.classify(text) if classifier is not None else None)
+    return rule_gate(text) or gate_from_label(text, classifier.classify(text) if classifier is not None else None,
+                                              word_on_topic)

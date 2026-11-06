@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import auth_helpers as A  # noqa: E402
 from app.main import create_app  # noqa: E402
 from hanja_db.store import HanjaStore  # noqa: E402
 
@@ -14,17 +15,12 @@ STORE = HanjaStore.load()
 FAKE_READING = re.compile(r"^[훈음]\d+$")
 
 
-def login(c, ci="ci-1"):
-    tok = c.post("/api/dev/verify", json={"ci": ci}).json()["verification_token"]
-    assert c.post("/api/parents/signup", json={
-        "verification_token": tok, "email": f"{ci}@x.kr", "agree_terms": True,
-        "agree_privacy": True, "agree_legal_guardian": True}).status_code == 201
-    tok2 = c.post("/api/dev/verify", json={"ci": ci}).json()["verification_token"]
-    return {"Authorization": "Bearer " + c.post("/api/parents/login", json={"verification_token": tok2}).json()["session"]}
+def login(c, uid="mom01"):
+    return A.parent(c, uid)
 
 
-def child(c, H, nick, body, grade, consent=True):
-    kid = c.post("/api/children", headers=H, json={"nickname": nick, "pin": "1234", "ai_consent": consent}).json()["id"]
+def child(c, H, nick, body, grade, consent=True, login_id=None):
+    kid = A.new_child(c, H, nick, login_id=login_id, consent=consent)
     r = c.put(f"/api/children/{kid}/target", headers=H, json={"body": body, "grade": grade})
     assert r.status_code == 200, r.text
     return kid
@@ -32,8 +28,9 @@ def child(c, H, nick, body, grade, consent=True):
 
 def test_full_journey_signup_to_report():
     c = TestClient(create_app(env={"ADMIN_TOKEN": "adm"}))
-    H = login(c)
-    kid = child(c, H, "별이", "korea_eomunhoe", "8")
+    H = A.parent(c, "mom01", default=False)
+    kid = child(c, H, "별이", "korea_eomunhoe", "8", login_id="star01")
+    c.headers.update(A.child_login(c, "star01"))  # the child logs in on its own device: learning as the child
 
     today = c.get(f"/api/children/{kid}/today").json()
     assert 3 <= len(today["new"]) <= 15
@@ -155,6 +152,8 @@ def test_billing_routes_are_wired():
     assert c.get("/api/admin/refunds?status=review_requested", headers={"X-Admin-Token": "adm"}).status_code == 200
 
 
-def test_dev_verify_disabled_in_production():
+def test_no_phone_verification_or_dev_endpoints_in_production():
     c = TestClient(create_app(env={"HANJA_ENV": "production"}))
-    assert c.post("/api/dev/verify", json={}).status_code == 404
+    assert c.post("/api/dev/verify", json={}).status_code == 404  # phone verification is gone everywhere
+    assert c.post("/api/dev/clock", json={}).status_code == 404
+    assert A.signup(c, "prod01").status_code == 201  # sign-up needs no verification step

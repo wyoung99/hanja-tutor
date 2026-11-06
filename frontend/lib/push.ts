@@ -62,7 +62,7 @@ export async function enablePush(): Promise<PushState> {
   }
   sub = sub ?? (await reg.pushManager.subscribe({
     userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(cfg.public_key) as BufferSource }));
-  await api("/parents/me/push-subscriptions", { auth: true, body: subscriptionBody(sub.toJSON()) });
+  await api("/parents/me/push-subscriptions", { body: subscriptionBody(sub.toJSON()) });
   return "on";
 }
 
@@ -71,7 +71,7 @@ export async function disablePush(): Promise<PushState> {
   const reg = await navigator.serviceWorker.getRegistration();
   const sub = await reg?.pushManager.getSubscription();
   if (sub) {
-    await api("/parents/me/push-subscriptions", { auth: true, method: "DELETE", body: { endpoint: sub.endpoint } }).catch(() => undefined);
+    await api("/parents/me/push-subscriptions", { method: "DELETE", body: { endpoint: sub.endpoint } }).catch(() => undefined);
     await sub.unsubscribe();
   }
   return "off";

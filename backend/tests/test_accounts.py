@@ -1,3 +1,5 @@
+"""AC2 accounts: parent id/password sign-up (no phone verification), parent-created child accounts, one login
+for both roles, child lockout after 5 wrong passwords + parent reset, AI-consent gating, password hashing."""
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -11,68 +13,105 @@ from fastapi.testclient import TestClient  # noqa: E402
 from accounts import service as s  # noqa: E402
 from accounts.api import create_app  # noqa: E402
 
+PW = "parent-pw-1"
+
 
 @pytest.fixture
-def env():
-    v = s.FakeIdentityVerifier()
-    svc = s.AccountService(v, clock=lambda: datetime(2026, 1, 1, tzinfo=s.KST))
-    return v, svc
+def svc():
+    return s.AccountService(clock=lambda: datetime(2026, 1, 1, tzinfo=s.KST))
 
 
-def signup(v, svc, ci="ci-1"):
-    tok = v.complete_verification(ci)
-    return svc.signup_parent(tok, "p@example.com", True, True, True)
+def signup(svc, login_id="mom01", email="p@example.com"):
+    return svc.signup_parent(login_id, PW, email, True, True, True)
 
 
-def test_signup_requires_phone_verification(env):
-    v, svc = env
-    with pytest.raises(s.IdentityNotVerified):
-        svc.signup_parent("bogus", "p@example.com", True, True, True)
-    assert svc.parents == {}
+def test_signup_needs_no_phone_verification(svc):
+    p = signup(svc)
+    assert p.login_id == "mom01" and p.email == "p@example.com"
+    assert p.consents == {"terms": True, "privacy": True, "legal_guardian": True}
+    assert not hasattr(s, "FakeIdentityVerifier") and not hasattr(s, "IdentityNotVerified")
+    r = svc.login("mom01", PW)
+    assert r.role == s.PARENT and r.account_id == p.id
 
 
-def test_signup_requires_consent_and_email(env):
-    v, svc = env
-    tok = v.complete_verification("ci")
+def test_signup_requires_consents_email_and_valid_credentials(svc):
     with pytest.raises(s.ConsentRequired):
-        svc.signup_parent(tok, "p@example.com", True, False, True)
+        svc.signup_parent("mom01", PW, "p@example.com", True, False, True)
     with pytest.raises(s.ValidationFailed):
-        svc.signup_parent(tok, "nope", True, True, True)
-    assert svc.parents == {}
+        svc.signup_parent("mom01", PW, "nope", True, True, True)
+    for bad_id in ("ab", "a" * 21, "엄마아이디", "-mom", "mom 01"):
+        with pytest.raises(s.ValidationFailed):
+            svc.signup_parent(bad_id, PW, "p@example.com", True, True, True)
+    for bad_pw in ("short1", "onlyletters", "12345678", "x1" * 70):
+        with pytest.raises(s.ValidationFailed):
+            svc.signup_parent("mom01", bad_pw, "p@example.com", True, True, True)
+    assert svc.parents == {} and svc._login_index == {}
 
 
-def test_signup_ok_blocks_duplicates_and_token_reuse(env):
-    v, svc = env
-    p = signup(v, svc)
-    assert p.email == "p@example.com" and "ci-1" not in repr(p)
+def test_duplicate_id_rejected_case_insensitive_across_parents_and_children(svc):
+    p = signup(svc)
     with pytest.raises(s.AlreadyRegistered):
-        signup(v, svc)
-    tok = v.complete_verification("ci-2")
-    svc.signup_parent(tok, "q@example.com", True, True, True)
-    with pytest.raises(s.IdentityNotVerified):
-        svc.signup_parent(tok, "r@example.com", True, True, True)
+        signup(svc, "MOM01", "q@example.com")
+    svc.create_child(p.id, "하늘", "sky1", login_id="Sky01")
+    with pytest.raises(s.AlreadyRegistered):  # a parent cannot take a child's id
+        signup(svc, "sky01", "q@example.com")
+    with pytest.raises(s.AlreadyRegistered):  # and a child cannot take a parent's id
+        svc.create_child(p.id, "별", "star1", login_id="Mom01")
+    assert len(svc.parents) == 1 and len(svc.children) == 1
 
 
-def test_child_profile_nickname_pin(env):
-    v, svc = env
-    p = signup(v, svc)
-    c = svc.create_child(p.id, "하늘", "1234", ai_consent=True)
-    assert c.nickname == "하늘" and c.pin_hash != "1234"
-    with pytest.raises(s.ValidationFailed):
-        svc.create_child(p.id, "별", "12")
-    with pytest.raises(s.ValidationFailed):
-        svc.create_child(p.id, "별", "abcd")
-    with pytest.raises(s.ValidationFailed):
-        svc.create_child(p.id, "", "1234")
-    svc.create_child(p.id, "a", "1234")
-    svc.create_child(p.id, "b", "1234")
-    with pytest.raises(s.ValidationFailed):
-        svc.create_child(p.id, "c", "1234")
+def test_passwords_are_hashed_never_plaintext(svc):
+    p = signup(svc)
+    c = svc.create_child(p.id, "하늘", "sky1234", login_id="sky01")
+    for acct, pw in ((p, PW), (c, "sky1234")):
+        assert pw not in repr(acct) and acct.password_hash.startswith("scrypt$16384$8$1$")
+        assert s.check_password(pw, acct.password_hash) and not s.check_password(pw + "x", acct.password_hash)
+    # per-password salt: the same password gives different hashes
+    assert s.hash_password("same-pass1") != s.hash_password("same-pass1")
+    assert not s.check_password("anything", None) and not s.check_password("x", "garbage")
 
 
-def test_no_ai_consent_disables_only_chatbot(env):
-    v, svc = env
-    p = signup(v, svc)
+def test_one_login_for_parent_and_child_wrong_password(svc):
+    p = signup(svc)
+    c = svc.create_child(p.id, "하늘", "sky1", login_id="sky01")
+    rp = svc.login("MOM01", PW)  # ids are case-insensitive
+    rc = svc.login("sky01", "sky1")
+    assert (rp.role, rp.account_id) == (s.PARENT, p.id)
+    assert (rc.role, rc.account_id, rc.parent_id, rc.nickname) == (s.CHILD, c.id, p.id, "하늘")
+    assert svc.principal(rp.session) == (s.PARENT, p.id) and svc.principal(rc.session) == (s.CHILD, c.id)
+    with pytest.raises(s.InvalidCredentials) as e:
+        svc.login("mom01", "wrong-pass1")
+    assert e.value.remaining is None  # parents are not locked
+    with pytest.raises(s.InvalidCredentials):
+        svc.login("nobody", PW)
+    # role separation: a child session is refused on parent APIs, an unknown token needs login
+    with pytest.raises(s.ParentOnly):
+        svc.parent_for_session(rc.session)
+    with pytest.raises(s.LoginRequired):
+        svc.parent_for_session("bogus")
+    assert svc.parent_for_session(rp.session).id == p.id
+    svc.logout(rc.session)
+    assert svc.principal(rc.session) is None
+
+
+def test_children_are_created_by_the_parent_only(svc):
+    p = signup(svc)
+    c = svc.create_child(p.id, "하늘", "sky1", ai_consent=True, login_id="sky01")
+    assert c.parent_id == p.id and c.login_id == "sky01"
+    with pytest.raises(s.ValidationFailed):
+        svc.create_child(p.id, "별", "abc", login_id="star01")  # child password >= 4
+    with pytest.raises(s.ValidationFailed):
+        svc.create_child(p.id, "", "1234", login_id="star01")
+    with pytest.raises(s.NotFound):
+        svc.create_child("not-a-parent", "별", "1234", login_id="star01")
+    svc.create_child(p.id, "a", "1234", login_id="kid-a")
+    svc.create_child(p.id, "b", "1234", login_id="kid-b")
+    with pytest.raises(s.ValidationFailed):
+        svc.create_child(p.id, "c", "1234", login_id="kid-c")  # max 3
+
+
+def test_no_ai_consent_disables_only_chatbot(svc):
+    p = signup(svc)
     c = svc.create_child(p.id, "하늘", "1234", ai_consent=False)
     f = svc.features(c.id)
     assert f["chatbot"] is False
@@ -84,59 +123,87 @@ def test_no_ai_consent_disables_only_chatbot(env):
     assert svc.features(c.id)["chatbot"] is True
 
 
-def test_pin_locks_after_five_failures_and_parent_reset_unlocks(env):
-    v, svc = env
-    p = signup(v, svc)
-    c = svc.create_child(p.id, "하늘", "1234")
+def test_child_locks_after_five_wrong_passwords_and_parent_reset_unlocks(svc):
+    p = signup(svc)
+    c = svc.create_child(p.id, "하늘", "sky1", login_id="sky01")
+    old = svc.login("sky01", "sky1").session
     for i in range(4):
-        with pytest.raises(s.InvalidPin) as e:
-            svc.verify_pin(c.id, "0000")
+        with pytest.raises(s.InvalidCredentials) as e:
+            svc.login("sky01", "0000")
         assert e.value.remaining == 4 - i
     with pytest.raises(s.ProfileLocked):
-        svc.verify_pin(c.id, "0000")
-    with pytest.raises(s.ProfileLocked):  # correct PIN rejected while locked
-        svc.verify_pin(c.id, "1234")
-    other = signup(v, svc, "ci-other")
+        svc.login("sky01", "0000")
+    assert c.locked
+    with pytest.raises(s.ProfileLocked):  # correct password rejected while locked
+        svc.login("sky01", "sky1")
+    other = signup(svc, "dad01", "d@example.com")
     with pytest.raises(s.Forbidden):
-        svc.reset_pin(other.id, c.id, "9999")
-    svc.reset_pin(p.id, c.id, "9999")
-    with pytest.raises(s.InvalidPin):
-        svc.verify_pin(c.id, "1234")
-    assert svc.verify_pin(c.id, "9999").failed_attempts == 0
+        svc.reset_child_password(other.id, c.id, "new1")
+    svc.reset_child_password(p.id, c.id, "new1")
+    assert svc.principal(old) is None  # reset signs the child's devices out
+    with pytest.raises(s.InvalidCredentials):
+        svc.login("sky01", "sky1")
+    assert svc.login("sky01", "new1").role == s.CHILD and c.failed_attempts == 0 and not c.locked
 
 
-def test_success_resets_failure_counter(env):
-    v, svc = env
-    p = signup(v, svc)
-    c = svc.create_child(p.id, "하늘", "1234")
+def test_success_resets_failure_counter(svc):
+    p = signup(svc)
+    c = svc.create_child(p.id, "하늘", "sky1", login_id="sky01")
     for _ in range(4):
-        with pytest.raises(s.InvalidPin):
-            svc.verify_pin(c.id, "0000")
-    svc.verify_pin(c.id, "1234")
-    with pytest.raises(s.InvalidPin) as e:
-        svc.verify_pin(c.id, "0000")
-    assert e.value.remaining == 4
+        with pytest.raises(s.InvalidCredentials):
+            svc.login("sky01", "0000")
+    svc.login("sky01", "sky1")
+    with pytest.raises(s.InvalidCredentials) as e:
+        svc.login("sky01", "0000")
+    assert e.value.remaining == 4 and c.failed_attempts == 1
 
 
-def test_http_flow(env):
-    v, svc = env
+def test_dormant_parent_login_restores_and_child_waits(svc):
+    p = signup(svc)
+    c = svc.create_child(p.id, "하늘", "sky1", login_id="sky01")
+    svc.make_dormant(p.id)
+    with pytest.raises(s.AlreadyRegistered):  # dormant ids stay reserved
+        signup(svc, "mom01", "x@example.com")
+    with pytest.raises(s.AccountDormant):
+        svc.login("sky01", "sky1")
+    r = svc.login("mom01", PW)
+    assert r.restored_from_dormancy and p.id in svc.parents and c.id in svc.children
+    assert svc.login("sky01", "sky1").role == s.CHILD
+
+
+def test_http_flow(svc):
     cl = TestClient(create_app(svc))
-    body = {"verification_token": "x", "email": "p@example.com",
+    body = {"login_id": "mom01", "password": PW, "email": "p@example.com",
             "agree_terms": True, "agree_privacy": True, "agree_legal_guardian": True}
-    assert cl.post("/parents/signup", json=body).status_code == 401
-    tok = v.complete_verification("ci-http")
-    body["verification_token"] = tok
+    assert cl.post("/parents/signup", json={**body, "agree_legal_guardian": False}).status_code == 400
     assert cl.post("/parents/signup", json=body).status_code == 201
-    sess = cl.post("/parents/login", json={"verification_token": tok}).json()["session"]
-    h = {"Authorization": f"Bearer {sess}"}
-    assert cl.post("/children", json={"nickname": "n", "pin": "1234"}).status_code == 403
-    cid = cl.post("/children", json={"nickname": "n", "pin": "1234"}, headers=h).json()["id"]
-    assert cl.post(f"/children/{cid}/chat-access").status_code == 403
-    assert cl.get(f"/children/{cid}/features").json()["todays_hanja"] is True
-    for _ in range(4):
-        assert cl.post(f"/children/{cid}/verify-pin", json={"pin": "0"}).status_code == 401
-    assert cl.post(f"/children/{cid}/verify-pin", json={"pin": "0"}).status_code == 423
-    assert cl.post(f"/children/{cid}/reset-pin", json={"pin": "4321"}, headers=h).status_code == 200
-    assert cl.post(f"/children/{cid}/verify-pin", json={"pin": "4321"}).status_code == 200
+    assert cl.post("/parents/signup", json={**body, "login_id": "MOM01"}).json()["detail"]["code"] == "login_id_taken"
+    assert cl.post("/auth/login", json={"login_id": "mom01", "password": "nope-nope1"}).status_code == 401
+    lp = cl.post("/auth/login", json={"login_id": "mom01", "password": PW}).json()
+    assert lp["role"] == "parent"
+    h = {"Authorization": f"Bearer {lp['session']}"}
+    kid = {"login_id": "sky01", "password": "sky1", "nickname": "n"}
+    assert cl.post("/children", json=kid).status_code == 401
+    cid = cl.post("/children", json=kid, headers=h).json()["id"]
+    lc = cl.post("/auth/login", json={"login_id": "sky01", "password": "sky1"}).json()
+    assert lc["role"] == "child" and lc["account_id"] == cid and lc["nickname"] == "n"
+    k = {"Authorization": f"Bearer {lc['session']}"}
+    assert cl.get("/auth/me", headers=k).json()["role"] == "child"
+    # a child session cannot create children, reset passwords or change consent (parent APIs -> 403)
+    assert cl.post("/children", json={**kid, "login_id": "sky02"}, headers=k).status_code == 403
+    assert cl.post(f"/children/{cid}/reset-password", json={"password": "hack"}, headers=k).status_code == 403
+    assert cl.put(f"/children/{cid}/ai-consent", json={"ai_consent": True}, headers=k).status_code == 403
+    assert cl.get(f"/children/{cid}/features").status_code == 401
+    assert cl.post(f"/children/{cid}/chat-access", headers=k).status_code == 403  # no AI consent
+    assert cl.get(f"/children/{cid}/features", headers=k).json()["todays_hanja"] is True
+    for i in range(4):
+        r = cl.post("/auth/login", json={"login_id": "sky01", "password": "0"})
+        assert r.status_code == 401 and r.json()["detail"]["remaining"] == 4 - i
+    assert cl.post("/auth/login", json={"login_id": "sky01", "password": "0"}).status_code == 423
+    assert cl.post(f"/children/{cid}/reset-password", json={"password": "4321"}, headers=h).status_code == 200
+    lc = cl.post("/auth/login", json={"login_id": "sky01", "password": "4321"}).json()
+    k = {"Authorization": f"Bearer {lc['session']}"}
     assert cl.put(f"/children/{cid}/ai-consent", json={"ai_consent": True}, headers=h).status_code == 200
-    assert cl.post(f"/children/{cid}/chat-access").status_code == 200
+    assert cl.post(f"/children/{cid}/chat-access", headers=k).status_code == 200
+    assert cl.post("/auth/logout", headers=k).status_code == 200
+    assert cl.get("/auth/me", headers=k).status_code == 401

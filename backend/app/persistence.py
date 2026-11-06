@@ -59,19 +59,23 @@ def _jsonable(v):
 
 # ---- accounts ------------------------------------------------------------------------
 def parent_doc(p: ParentAccount) -> dict:
-    return {"id": p.id, "ci_hash": p.ci_hash, "email": p.email, "consents": p.consents,
-            "created_at": dt(p.created_at), "last_active_at": dt(p.last_active_at),
+    # password_hash is the scrypt string ("scrypt$N$r$p$salt$hash"); plaintext is never part of any row
+    return {"id": p.id, "login_id": p.login_id, "password_hash": p.password_hash, "email": p.email,
+            "consents": p.consents, "created_at": dt(p.created_at), "last_active_at": dt(p.last_active_at),
             "dormancy_notice_at": dt(p.dormancy_notice_at), "dormant_at": dt(p.dormant_at)}
 
 
 def parent_from(x: dict) -> ParentAccount:
-    return ParentAccount(x["id"], x["ci_hash"], x["email"], dict(x["consents"]), pdt(x["created_at"]),
-                         pdt(x["last_active_at"]), pdt(x["dormancy_notice_at"]), pdt(x["dormant_at"]))
+    # A row from before 2026-11-06 (phone verification, no id/password) loads with login_id/password_hash
+    # None: it cannot log in, but its data stays consistent and the dormancy / deletion rules still apply.
+    return ParentAccount(x["id"], x.get("login_id"), x.get("password_hash"), x["email"], dict(x["consents"]),
+                         pdt(x["created_at"]), pdt(x["last_active_at"]), pdt(x["dormancy_notice_at"]),
+                         pdt(x["dormant_at"]))
 
 
 def child_doc(c: ChildProfile) -> dict:
-    return {"id": c.id, "parent_id": c.parent_id, "nickname": c.nickname, "pin_salt": c.pin_salt.hex(),
-            "pin_hash": c.pin_hash, "ai_consent": c.ai_consent, "failed_attempts": c.failed_attempts,
+    return {"id": c.id, "parent_id": c.parent_id, "login_id": c.login_id, "nickname": c.nickname,
+            "password_hash": c.password_hash, "ai_consent": c.ai_consent, "failed_attempts": c.failed_attempts,
             "locked": c.locked, "created_at": dt(c.created_at), "ai_consent_at": dt(c.ai_consent_at),
             "extra": _jsonable(c.extra)}
 
@@ -80,7 +84,8 @@ def child_from(x: dict) -> ChildProfile:
     extra = dict(x.get("extra") or {})
     if extra.get("target"):
         extra["target"] = tuple(extra["target"])
-    return ChildProfile(x["id"], x["parent_id"], x["nickname"], bytes.fromhex(x["pin_salt"]), x["pin_hash"],
+    # pre-2026-11-06 PIN profiles load without login_id/password_hash (no login until the parent sets one)
+    return ChildProfile(x["id"], x["parent_id"], x.get("login_id"), x["nickname"], x.get("password_hash"),
                         x["ai_consent"], x["failed_attempts"], x["locked"], pdt(x["created_at"]),
                         pdt(x["ai_consent_at"]), extra)
 
@@ -168,6 +173,18 @@ def register_all(sync, *, acc, planners, plan_states, tracings, attempts, sdb, t
             acc._sessions[k] = pid
 
     reg("parent_sessions", lambda: ((k, None, pid, {}) for k, pid in list(acc._sessions.items())), sessions_restore)
+
+    def child_sessions_snapshot():
+        for k, cid in list(acc._child_sessions.items()):
+            c = acc.children.get(cid)
+            yield k, cid, c.parent_id if c else None, {}
+
+    def child_sessions_restore(rows):
+        for k, cid, _, _ in rows:
+            acc._child_sessions[k] = cid
+
+    # child_id column: deleting a child deletes its sessions with every other child row
+    reg("child_sessions", child_sessions_snapshot, child_sessions_restore)
 
     # study plans + review items
     def plans_snapshot():
@@ -271,19 +288,10 @@ def register_all(sync, *, acc, planners, plan_states, tracings, attempts, sdb, t
                                                                      pdt(x["override_until"]), pdt(x["last_beat"])))
                       for _, cid, _, x in rows])
 
-    def pins_snapshot():
-        for pid in set(st._parent_pin) | set(st._pin_failures):
-            rec = st._parent_pin.get(pid)
-            yield pid, None, pid, {"salt": rec[0].hex() if rec else None, "hash": rec[1] if rec else None,
-                                   "failures": st._pin_failures.get(pid, 0)}
-
-    def pins_restore(rows):
-        for pid, _, _, x in rows:
-            if x["salt"]:
-                st._parent_pin[pid] = (bytes.fromhex(x["salt"]), x["hash"])
-            st._pin_failures[pid] = x["failures"]
-
-    reg("parent_pins", pins_snapshot, pins_restore)
+    # wrong parent passwords typed on a child's device for extra time (a parent login clears them)
+    reg("parent_password_failures",
+        lambda: ((pid, None, pid, {"failures": n}) for pid, n in list(st._password_failures.items())),
+        lambda rows: [st._password_failures.__setitem__(pid, x["failures"]) for pid, _, _, x in rows])
     reg("extension_requests", lambda: ((r.id, r.child_id, None, {**r.__dict__, "created_at": dt(r.created_at),
                                                                  "resolved_at": dt(r.resolved_at)})
                                        for r in list(st.requests.values())),
@@ -373,9 +381,5 @@ def register_all(sync, *, acc, planners, plan_states, tracings, attempts, sdb, t
 
 
 def rebuild_indexes(acc) -> None:
-    """Derived account indexes after a restore."""
-    for p in acc.parents.values():
-        acc._ci_index[p.ci_hash] = p.id
-    for p in acc.dormant_parents.values():
-        acc._dormant_ci_index[p.ci_hash] = p.id
-
+    """Derived account indexes after a restore (login ids of active and dormant accounts)."""
+    acc.rebuild_login_index()

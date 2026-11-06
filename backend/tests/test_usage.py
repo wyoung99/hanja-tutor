@@ -8,7 +8,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from accounts.service import AccountService, FakeIdentityVerifier  # noqa: E402
+from accounts.service import AccountService  # noqa: E402
 from chatbot.service import ChatbotService, RecordingNotifier  # noqa: E402
 from llm import FakeProvider, LLMError  # noqa: E402
 from mockexam.service import MockExamService  # noqa: E402
@@ -34,9 +34,8 @@ class Paid:
 
 
 def world(limits=None, t=WED, sub=None, handler=None):
-    ver = FakeIdentityVerifier()
-    acc = AccountService(ver)
-    p = acc.signup_parent(ver.complete_verification("ci1"), "p@x.kr", True, True, True)
+    acc = AccountService()
+    p = acc.signup_parent("p-ci1", "parent-pw-1", "p@x.kr", True, True, True)
     a = acc.create_child(p.id, "별이", "1234", ai_consent=True)
     b = acc.create_child(p.id, "달이", "1234", ai_consent=True)
     for c in (a, b):

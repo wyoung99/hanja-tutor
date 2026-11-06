@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { api, ApiError, pct } from "../lib/api";
+import { api, ApiError, passwordError, pct } from "../lib/api";
 import { disablePush, enablePush, pushState, PUSH_STATE_TEXT, type PushState } from "../lib/push";
 import { gradeLabel } from "../lib/strokes";
 import type { Child } from "./ChildPanels";
@@ -8,47 +8,48 @@ import type { Child } from "./ChildPanels";
 const err = (e: unknown) => (e instanceof ApiError ? (e.detail?.message ?? e.detail?.code ?? "error") : "error");
 
 // ---------------------------------------------------------------- child card (AC2, AC3, AC4, AC11)
-export function ChildCard({ k, bodyName, onEnter, reload }: { k: Child & { exam_date?: string | null }; bodyName: string; onEnter: () => void; reload: () => void }) {
-  const [open, setOpen] = useState<"" | "plan" | "time" | "pin">("");
-  const [pin, setPin] = useState("");
+export function ChildCard({ k, bodyName, reload }: { k: Child & { login_id?: string; exam_date?: string | null }; bodyName: string; reload: () => void }) {
+  const [open, setOpen] = useState<"" | "plan" | "time" | "password">("");
+  const [pw, setPw] = useState("");
   const [msg, setMsg] = useState("");
   async function toggleConsent() {
-    await api(`/children/${k.id}/ai-consent`, { auth: true, method: "PUT", body: { ai_consent: !k.ai_consent } });
+    await api(`/children/${k.id}/ai-consent`, { method: "PUT", body: { ai_consent: !k.ai_consent } });
     reload();
   }
-  async function resetPin() {
+  async function resetPassword() {
+    const local = passwordError(pw, "child");
+    if (local) return setMsg(local);
     try {
-      await api(`/children/${k.id}/reset-pin`, { auth: true, body: { pin } });
-      setPin(""); setMsg("PIN을 바꿨어요. 잠금이 풀렸어요."); setOpen("");
+      await api(`/children/${k.id}/reset-password`, { body: { password: pw } });
+      setPw(""); setMsg("비밀번호를 바꿨어요. 잠금이 풀렸어요. 아이 기기에서 새 비밀번호로 다시 로그인해요."); setOpen("");
       reload();
     } catch (e) { setMsg(err(e)); }
   }
   async function remove() {
-    if (!confirm(`${k.nickname} 프로필과 학습 기록·대화를 영구 삭제할까요?`)) return;
-    await api(`/children/${k.id}`, { auth: true, method: "DELETE" });
+    if (!confirm(`${k.nickname} 계정과 학습 기록·대화를 영구 삭제할까요?`)) return;
+    await api(`/children/${k.id}`, { method: "DELETE" });
     reload();
   }
   return (
     <section className="card" data-testid="child-card">
-      <strong>{k.nickname}</strong> · {bodyName} {k.target[1] ? gradeLabel(k.target[1]) : ""}
-      {k.locked && <span className="badge" data-testid={`locked-${k.nickname}`}> 🔒 PIN 잠김</span>}
+      <strong>{k.nickname}</strong> <small data-testid={`login-id-${k.nickname}`}>(아이디 {k.login_id})</small> · {bodyName} {k.target[1] ? gradeLabel(k.target[1]) : ""}
+      {k.locked && <span className="badge" data-testid={`locked-${k.nickname}`}> 🔒 비밀번호 5회 오류로 잠김</span>}
       <div>
-        <button data-testid={`enter-${k.nickname}`} onClick={onEnter}>공부 시작</button>
         <button className="secondary" data-testid={`plan-${k.nickname}`} onClick={() => setOpen(open === "plan" ? "" : "plan")}>학습 계획</button>
         <button className="secondary" data-testid={`time-${k.nickname}`} onClick={() => setOpen(open === "time" ? "" : "time")}>사용 시간</button>
-        <button className="secondary" data-testid={`pin-${k.nickname}`} onClick={() => setOpen(open === "pin" ? "" : "pin")}>PIN 재설정</button>
+        <button className="secondary" data-testid={`password-${k.nickname}`} onClick={() => setOpen(open === "password" ? "" : "password")}>비밀번호 재설정</button>
       </div>
       <label className="check"><input type="checkbox" data-testid={`consent-${k.nickname}`} checked={k.ai_consent} onChange={toggleConsent} />AI 처리 동의 (끄면 챗봇만 꺼져요)</label>
-      {open === "pin" && (
+      {open === "password" && (
         <div>
-          <input data-testid={`newpin-${k.nickname}`} type="password" inputMode="numeric" placeholder="새 PIN (숫자 4~6자리)" value={pin} onChange={(e) => setPin(e.target.value)} />
-          <button data-testid={`resetpin-${k.nickname}`} onClick={resetPin}>PIN 바꾸고 잠금 풀기</button>
+          <input data-testid={`newpassword-${k.nickname}`} type="password" autoComplete="new-password" placeholder="새 비밀번호 (4자 이상)" value={pw} onChange={(e) => setPw(e.target.value)} />
+          <button data-testid={`resetpassword-${k.nickname}`} onClick={resetPassword}>비밀번호 바꾸고 잠금 풀기</button>
         </div>
       )}
       {open === "plan" && <PlanEditor childId={k.id} />}
       {open === "time" && <ScreenTimeEditor childId={k.id} />}
       {msg && <p data-testid={`child-msg-${k.nickname}`}>{msg}</p>}
-      <button className="secondary danger" data-testid={`delete-${k.nickname}`} onClick={remove}>프로필 삭제</button>
+      <button className="secondary danger" data-testid={`delete-${k.nickname}`} onClick={remove}>자녀 계정 삭제</button>
     </section>
   );
 }
@@ -59,12 +60,12 @@ function PlanEditor({ childId }: { childId: string }) {
   const [count, setCount] = useState("");
   const [msg, setMsg] = useState("");
   useEffect(() => {
-    api(`/children/${childId}/plan`, { auth: true }).then((p) => { setPlan(p); setDate(p.exam_date ?? ""); setCount(p.daily_count?.toString() ?? ""); }).catch((e) => setMsg(err(e)));
+    api(`/children/${childId}/plan`).then((p) => { setPlan(p); setDate(p.exam_date ?? ""); setCount(p.daily_count?.toString() ?? ""); }).catch((e) => setMsg(err(e)));
   }, [childId]);
   async function save() {
     setMsg("");
     try {
-      setPlan(await api(`/children/${childId}/plan`, { auth: true, method: "PUT", body: { exam_date: date || null, daily_count: count ? Number(count) : null } }));
+      setPlan(await api(`/children/${childId}/plan`, { method: "PUT", body: { exam_date: date || null, daily_count: count ? Number(count) : null } }));
       setMsg("저장했어요.");
     } catch (e) { setMsg(err(e)); }
   }
@@ -85,7 +86,7 @@ function ScreenTimeEditor({ childId }: { childId: string }) {
   const [to, setTo] = useState("");
   const [msg, setMsg] = useState("");
   useEffect(() => {
-    api(`/children/${childId}/screentime`, { auth: true }).then((s) => {
+    api(`/children/${childId}/screentime`).then((s) => {
       setDaily(s.daily_minutes?.toString() ?? "");
       if (s.windows[0]) { setFrom(s.windows[0][0]); setTo(s.windows[0][1]); }
     });
@@ -93,7 +94,7 @@ function ScreenTimeEditor({ childId }: { childId: string }) {
   async function save() {
     setMsg("");
     try {
-      await api(`/children/${childId}/screentime`, { auth: true, method: "PUT", body: { daily_minutes: daily ? Number(daily) : null, windows: from && to ? [[from, to]] : [] } });
+      await api(`/children/${childId}/screentime`, { method: "PUT", body: { daily_minutes: daily ? Number(daily) : null, windows: from && to ? [[from, to]] : [] } });
       setMsg("저장했어요.");
     } catch (e) { setMsg(err(e)); }
   }
@@ -117,12 +118,12 @@ export function Reports({ kids }: { kids: Child[] }) {
   const [msg, setMsg] = useState("");
   useEffect(() => {
     setDetail(null); setMsg("");
-    if (k) api(`/children/${k.id}/report/basic`, { auth: true }).then(setBasic).catch(() => undefined);
+    if (k) api(`/children/${k.id}/report/basic`).then(setBasic).catch(() => undefined);
   }, [k?.id]);
   if (!k) return <p>자녀를 먼저 만들어 주세요.</p>;
   async function loadDetail() {
     setMsg("");
-    try { setDetail(await api(`/children/${k.id}/report/detailed`, { auth: true })); }
+    try { setDetail(await api(`/children/${k.id}/report/detailed`)); }
     catch (e) { setMsg(e instanceof ApiError && e.status === 402 ? "상세 리포트는 구독 전용이에요." : "오류가 발생했어요."); }
   }
   return (
@@ -161,14 +162,14 @@ export function Reports({ kids }: { kids: Child[] }) {
 function Conversations({ child }: { child: Child }) {
   const [threads, setThreads] = useState<any[]>([]);
   const [open, setOpen] = useState<{ id: string; messages: any[] } | null>(null);
-  const load = useCallback(() => api(`/children/${child.id}/conversations`, { auth: true }).then(setThreads).catch(() => undefined), [child.id]);
+  const load = useCallback(() => api(`/children/${child.id}/conversations`).then(setThreads).catch(() => undefined), [child.id]);
   useEffect(() => { load(); setOpen(null); }, [load]);
   async function view(id: string) {
-    const r = await api(`/children/${child.id}/conversations/${id}`, { auth: true });
+    const r = await api(`/children/${child.id}/conversations/${id}`);
     setOpen({ id, messages: r.messages });
   }
   async function del(id: string) {
-    await api(`/children/${child.id}/conversations/${id}`, { auth: true, method: "DELETE" });
+    await api(`/children/${child.id}/conversations/${id}`, { method: "DELETE" });
     if (open?.id === id) setOpen(null);
     load();
   }
@@ -191,7 +192,7 @@ const CATEGORY: Record<string, string> = { pii: "개인정보", profanity: "욕�
 
 function SafetyEvents({ child }: { child: Child }) {
   const [events, setEvents] = useState<any[]>([]);
-  useEffect(() => { api(`/children/${child.id}/safety-events`, { auth: true }).then(setEvents).catch(() => undefined); }, [child.id]);
+  useEffect(() => { api(`/children/${child.id}/safety-events`).then(setEvents).catch(() => undefined); }, [child.id]);
   return (
     <section className="card" aria-label="안전 알림" data-testid="safety-events">
       <h2>차단된 입력 기록 (원문은 저장하지 않아요)</h2>
@@ -201,7 +202,7 @@ function SafetyEvents({ child }: { child: Child }) {
   );
 }
 
-// ---------------------------------------------------------------- alerts: push inbox, extension requests, parent PIN (AC11, AC12)
+// ---------------------------------------------------------------- alerts: push inbox, extension requests (AC11, AC12)
 const KIND: Record<string, string> = {
   safety_event: "유해·개인정보 입력이 차단됐어요", extension_request: "사용 시간 연장 요청", weekly_summary: "주간 학습 요약",
   usage_limit_reached: "무료 한도 도달", dormancy_notice: "휴면 전환 예정 안내", payment_failed: "결제 실패",
@@ -222,7 +223,7 @@ export function PushSettings() {
     try { setState(await disablePush()); } catch { setState("error"); }
   }
   async function test() {
-    const r = await api("/parents/me/push-test", { auth: true, body: {} }).catch(() => null);
+    const r = await api("/parents/me/push-test", { body: {} }).catch(() => null);
     setMsg(r ? (r.push === "sent" ? "테스트 알림을 보냈어요." : r.email ? "푸시를 보내지 못해 이메일로 보냈어요." : "알림함에 넣었어요.") : "보내지 못했어요.");
   }
   return (
@@ -242,11 +243,9 @@ export function PushSettings() {
 export function Alerts() {
   const [reqs, setReqs] = useState<any[]>([]);
   const [notes, setNotes] = useState<any[]>([]);
-  const [pin, setPin] = useState("");
-  const [msg, setMsg] = useState("");
   const load = useCallback(async () => {
-    setReqs(await api("/parents/me/extension-requests", { auth: true }).catch(() => []));
-    const n = await api("/parents/me/notifications", { auth: true }).catch(() => []);
+    setReqs(await api("/parents/me/extension-requests").catch(() => []));
+    const n = await api("/parents/me/notifications").catch(() => []);
     setNotes((prev) => {
       if (n.length > prev.length) showSystemNotifications(n.slice(prev.length));
       return n;
@@ -258,12 +257,8 @@ export function Alerts() {
     return () => clearInterval(t);
   }, [load]);
   async function resolve(id: string, approve: boolean) {
-    await api(`/parents/me/extension-requests/${id}`, { auth: true, body: { approve } });
+    await api(`/parents/me/extension-requests/${id}`, { body: { approve } });
     load();
-  }
-  async function savePin() {
-    try { await api("/parents/me/pin", { auth: true, method: "PUT", body: { pin } }); setPin(""); setMsg("부모 PIN을 저장했어요."); }
-    catch (e) { setMsg(err(e)); }
   }
   return (
     <>
@@ -278,12 +273,7 @@ export function Alerts() {
           </div>
         ))}
       </section>
-      <section className="card" aria-label="부모 PIN">
-        <h2>부모 PIN (아이 기기에서 시간 추가할 때)</h2>
-        <input type="password" inputMode="numeric" data-testid="parent-pin" value={pin} onChange={(e) => setPin(e.target.value)} />
-        <button data-testid="parent-pin-save" onClick={savePin}>저장</button>
-        {msg && <p data-testid="parent-pin-msg">{msg}</p>}
-      </section>
+      <p className="card">아이 기기의 &lsquo;쉬는 시간&rsquo; 화면에서 부모님 계정 비밀번호를 입력하면 바로 시간을 더 줄 수 있어요.</p>
       <PushSettings />
       <section className="card" aria-label="알림">
         <h2>알림</h2>
@@ -307,13 +297,13 @@ export function Account({ onDeleted }: { onDeleted: () => void }) {
   const [msg, setMsg] = useState("");
   async function del() {
     if (!confirm("계정을 삭제하면 모든 자녀의 학습 기록과 대화가 즉시 삭제돼요. 결제 기록은 법에 따라 5년간 따로 보관돼요. 삭제할까요?")) return;
-    try { await api("/parents/me", { auth: true, method: "DELETE" }); onDeleted(); }
+    try { await api("/parents/me", { method: "DELETE" }); onDeleted(); }
     catch (e) { setMsg(err(e)); }
   }
   return (
     <section className="card" aria-label="계정">
       <h2>계정</h2>
-      <p>1년 동안 접속하지 않으면 30일 전에 안내한 뒤 휴면 계정으로 바뀌어요. 다시 로그인(본인인증)하면 복구돼요.</p>
+      <p>1년 동안 접속하지 않으면 30일 전에 안내한 뒤 휴면 계정으로 바뀌어요. 아이디와 비밀번호로 다시 로그인하면 복구돼요.</p>
       <button className="danger" data-testid="delete-account" onClick={del}>계정 삭제</button>
       {msg && <p className="err">{msg}</p>}
     </section>

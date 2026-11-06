@@ -25,7 +25,7 @@ and empty values count as unset.
 | `AWS_REGION` | Bedrock region (default `ap-northeast-2`, `global.*` profiles) |
 | `LLM_CONFIG` | `{"provider":"bedrock","region":"ap-northeast-2"}` -> Haiku 4.5 (chat, safety) / Sonnet 4.6 (question generation). Empty -> fake LLM |
 | `LLM_HEDGE_AFTER_S` | hedged requests for the chatbot answer stream and the safety classifier (Haiku only, never Sonnet question generation): if the first chunk has not arrived after this many seconds, ONE duplicate request is sent and the faster one wins. Default `1.5`, `0` disables. Counts (calls / hedged / hedge_won) in `GET /api/health` -> `llm.hedge` |
-| `OPENDICT_API_KEY` | 우리말샘 open API key (fallback for hanja missing from the DB). Empty -> "잘 모르겠어요" |
+| `OPENDICT_API_KEY` | 우리말샘 open API key: fallback for hanja missing from the DB, and short Hangul word questions ("학교", "학교 뜻", "학교가 뭐야") resolved to hanja via the 원어 field `sense.origin` (학교 -> 學校, grounded in the selected body's DB 훈·음, on-topic for the safety gate; lookups cached in-process, 2 s budget). Empty -> "잘 모르겠어요" for unknown hanja, and word questions get a per-syllable list of DB hanja instead of a resolved word |
 | `DATABASE_URL` / `PG_EMBEDDED_DIR` | PostgreSQL as the system of record (see below). `PG_EMBEDDED_DIR=.pgdata` starts the bundled pip PostgreSQL (pixeltable-pgserver, repo-local data dir); neither -> everything in memory |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Web Push to parents' browsers (base64url P-256 public point / raw private key; subject `mailto:` or `https://`). Generate with `cd backend && python -m notifications.webpush keygen`. Empty -> push disabled, in-app inbox + email fallback only |
 | `STROKE_TOL_POSITION`, `STROKE_TOL_LENGTH_MIN`, `STROKE_TOL_LENGTH_MAX`, `STROKE_TOL_DIRECTION_DEG` | stroke grading tolerances (defaults: 350, 0.5, 2.0, 60) |
@@ -41,13 +41,13 @@ With `DATABASE_URL` or `PG_EMBEDDED_DIR` every piece of state survives a restart
   `INSERT .. ON CONFLICT DO UPDATE SET used = used + 1 WHERE used < limit RETURNING`, so two devices (or two server
   processes) can never pass the limit (AC13);
 * everything else: one table per entity (`parents`, `children`, `dormant_parents`, `dormant_children`,
-  `parent_sessions` (token hashes), `study_plans`, `review_items`, `tracing_progress`, `tracing_attempts`, `mock_exams`,
-  `report_days`, `review_answers`, `weekly_summaries_sent`, `screentime_settings`, `screentime_days`, `parent_pins`,
+  `parent_sessions` / `child_sessions` (token hashes), `study_plans`, `review_items`, `tracing_progress`, `tracing_attempts`, `mock_exams`,
+  `report_days`, `review_answers`, `weekly_summaries_sent`, `screentime_settings`, `screentime_days`, `parent_password_failures`,
   `extension_requests`, `safety_events`, `safety_thread_counts`, `chat_locks`, `paid_usage_events`,
   `usage_limit_notices`, `subscriptions`, `payments`, `payment_archive`, `refund_requests`, `dormant_vault`,
   `notifications`, `push_subscriptions`), each `(key, child_id, parent_id, doc jsonb, updated_at)`. Schema creation is
-  idempotent (`CREATE .. IF NOT EXISTS`, version row in `app_schema_version`); no ORM (`db/state.py`,
-  `app/persistence.py`).
+  idempotent (`CREATE .. IF NOT EXISTS`, version row in `app_schema_version`; v2 drops the obsolete `parent_pins`);
+  no ORM (`db/state.py`, `app/persistence.py`).
 
 The services keep their working set in memory and `StateSync` writes the diff of every request in one transaction
 **before the response is sent** (ASGI middleware; again after streamed responses and background jobs). At startup the
@@ -58,6 +58,23 @@ Unit tests use the in-memory implementations behind the same interfaces.
 
 `python backend/scripts/restart_survival.py` demonstrates it on real processes (uvicorn #1 writes, uvicorn and
 PostgreSQL stop, uvicorn #2 reads) -> `reports/restart-survival.json`.
+
+## Accounts and login (user decision 2026-11-06: no phone verification)
+
+* `/` is the login screen (one form for parents and children, `POST /api/auth/login {login_id, password}` ->
+  `{session, role, ...}`; the server decides the role from the id). `/signup` is the separate parent sign-up page
+  (`POST /api/parents/signup {login_id, password, email, agree_terms, agree_privacy, agree_legal_guardian}`).
+* Children cannot self-register: the parent creates the child account (`POST /api/children {login_id, password,
+  nickname, ai_consent}`). 5 wrong child passwords lock it; `POST /api/children/{id}/reset-password` (parent) sets a
+  new one, unlocks it and signs the child out.
+* Ids: 4-20 chars `[A-Za-z0-9._-]`, unique across parents and children, case-insensitive. Passwords: parents >= 8 with a
+  letter and a digit, children >= 4. Stored only as `scrypt$N$r$p$salt$hash` (hashlib.scrypt, N=2^14, per-password
+  salt, constant-time compare); never logged.
+* Child sessions see learning routes only; every parent (management) route answers `403 {"code": "parent_only"}`.
+  Learning routes need the child's session (the owning parent's session is accepted too).
+* Extra screen time on the child's device: the parent types the parent ACCOUNT password (5 wrong tries block it
+  until the parent logs in again).
+* A dormant parent account is restored by logging in with id + password.
 
 ## Notifications (Web Push)
 

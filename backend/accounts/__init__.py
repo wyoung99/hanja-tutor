@@ -1,1 +1,1 @@
-"""Parent accounts, child profiles, PIN lockout and AI-processing consent (AC2)."""
+"""Parent accounts (id + password), parent-created child accounts, child password lockout and AI-processing consent (AC2)."""

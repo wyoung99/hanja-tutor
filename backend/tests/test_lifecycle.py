@@ -7,7 +7,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from accounts.service import FakeIdentityVerifier, NotFound  # noqa: E402
+from accounts.service import NotFound  # noqa: E402
 from conversations import ConversationService, InMemoryCheckpointer  # noqa: E402
 from lifecycle import LifecycleService, PaymentRecord  # noqa: E402
 from test_chatbot import setup  # noqa: E402
@@ -83,10 +83,14 @@ def test_dormancy_notice_30_days_before_then_dormant_then_restore():
     assert child.id not in acc.children and child.id in acc.dormant_children
     assert cp.thread_ids() == [] and conv.meta.rows == {}  # conversations moved to separate storage
     assert life.payments.records  # payments untouched
-    # re-login via identity verification restores everything
-    ver = acc.verifier
-    session = life.login_parent(ver.complete_verification("ci1"))
-    assert acc.parent_for_session(session).id == p.id
+    # the child cannot log in while the family account is dormant
+    from accounts.service import AccountDormant
+    child_login = child.login_id
+    with pytest.raises(AccountDormant):
+        life.login(child_login, "1234")
+    # logging in with the parent's id + password restores everything (no identity re-verification)
+    r = life.login("p-ci1", "parent-pw-1")
+    assert r.restored_from_dormancy and acc.parent_for_session(r.session).id == p.id
     assert child.id in acc.children and tid in cp.thread_ids() and tid in conv.meta.rows
 
 
@@ -96,7 +100,7 @@ def test_login_resets_inactivity_clock_and_notice():
     clock.t = t0 + timedelta(days=340)
     life.run_dormancy_sweep()
     assert p.dormancy_notice_at is not None
-    life.login_parent(acc.verifier.complete_verification("ci1"))
+    life.login("P-CI1", "parent-pw-1")  # ids are case-insensitive
     assert p.dormancy_notice_at is None
     clock.t = t0 + timedelta(days=400)
     assert life.run_dormancy_sweep()["dormant"] == []

@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
+import auth_helpers as A
 from app.main import Clock, create_app
 from chatbot.dictionary import UrimalsaemClient
 from hanja_db.store import HanjaStore
@@ -23,41 +24,115 @@ def make(env=None, t=T0):
     return TestClient(app), clock, app.state.services
 
 
-def login(c, ci="ci-1"):
-    tok = c.post("/api/dev/verify", json={"ci": ci}).json()["verification_token"]
-    c.post("/api/parents/signup", json={"verification_token": tok, "email": f"{ci}@x.kr", "agree_terms": True,
-                                        "agree_privacy": True, "agree_legal_guardian": True})
-    tok2 = c.post("/api/dev/verify", json={"ci": ci}).json()["verification_token"]
-    return {"Authorization": "Bearer " + c.post("/api/parents/login", json={"verification_token": tok2}).json()["session"]}
+NOAUTH = {"Authorization": ""}  # overrides the client's default (parent) session
 
 
-def kid(c, H, nick="별이", body="korea_eomunhoe", grade="8", consent=True):
-    r = c.post("/api/children", headers=H, json={"nickname": nick, "pin": "1234", "ai_consent": consent})
-    assert r.status_code == 201, r.text
-    cid = r.json()["id"]
+def login(c, uid="mom01"):
+    """Parent id/password sign-up + login; the parent session becomes the client's default header."""
+    return A.parent(c, uid)
+
+
+def kid(c, H, nick="별이", body="korea_eomunhoe", grade="8", consent=True, login_id=None):
+    cid = A.new_child(c, H, nick, login_id=login_id, consent=consent)
     assert c.put(f"/api/children/{cid}/target", headers=H, json={"body": body, "grade": grade}).status_code == 200
     return cid
 
 
 # ---- AC2 -------------------------------------------------------------------------------
-def test_consent_toggle_and_pin_lock_reset_over_http():
+def test_consent_toggle_and_child_password_lock_reset_over_http():
     c, _, _ = make()
-    H = login(c)
-    cid = kid(c, H, consent=False)
-    assert c.post(f"/api/children/{cid}/chat", json={"message": "學이 뭐예요?"}).status_code == 403
-    assert c.post(f"/api/children/{cid}/chat/stream", json={"message": "學이 뭐예요?"}).status_code == 403
-    assert c.get(f"/api/children/{cid}/today").status_code == 200  # other learning still works
+    H = A.parent(c, "mom01", default=False)
+    cid = kid(c, H, consent=False, login_id="star01")
+    K = A.child_login(c, "star01")
+    assert c.post(f"/api/children/{cid}/chat", headers=K, json={"message": "學이 뭐예요?"}).status_code == 403
+    assert c.post(f"/api/children/{cid}/chat/stream", headers=K, json={"message": "學이 뭐예요?"}).status_code == 403
+    assert c.get(f"/api/children/{cid}/today", headers=K).status_code == 200  # other learning still works
+    assert c.put(f"/api/children/{cid}/ai-consent", headers=K, json={"ai_consent": True}).status_code == 403
     assert c.put(f"/api/children/{cid}/ai-consent", headers=H, json={"ai_consent": True}).status_code == 200
-    assert c.post(f"/api/children/{cid}/chat", json={"message": "學이 뭐예요?"}).json()["status"] == "answered"
+    assert c.post(f"/api/children/{cid}/chat", headers=K, json={"message": "學이 뭐예요?"}).json()["status"] == "answered"
 
-    for _ in range(4):
-        assert c.post(f"/api/children/{cid}/verify-pin", json={"pin": "0000"}).status_code == 401
-    assert c.post(f"/api/children/{cid}/verify-pin", json={"pin": "0000"}).status_code == 423
-    assert c.post(f"/api/children/{cid}/verify-pin", json={"pin": "1234"}).status_code == 423
+    for i in range(4):
+        r = A.login(c, "star01", "0000")
+        assert r.status_code == 401 and r.json()["detail"]["remaining"] == 4 - i
+    assert A.login(c, "star01", "0000").status_code == 423
+    assert A.login(c, "star01", A.CHILD_PW).status_code == 423  # locked: even the right password
     assert c.get("/api/children", headers=H).json()[0]["locked"] is True
-    assert c.post(f"/api/children/{cid}/reset-pin", json={"pin": "5678"}).status_code in (401, 403)  # parent only
-    assert c.post(f"/api/children/{cid}/reset-pin", headers=H, json={"pin": "5678"}).status_code == 200
-    assert c.post(f"/api/children/{cid}/verify-pin", json={"pin": "5678"}).status_code == 200
+    reset = f"/api/children/{cid}/reset-password"
+    assert c.post(reset, json={"password": "5678"}).status_code == 401
+    assert c.post(reset, headers=K, json={"password": "5678"}).status_code == 403  # parent only
+    assert c.post(reset, headers=H, json={"password": "5678"}).status_code == 200
+    assert c.get(f"/api/children/{cid}/today", headers=K).status_code == 401  # reset signed the child out
+    assert c.get("/api/children", headers=H).json()[0]["locked"] is False
+    assert A.login(c, "star01", "5678").json()["role"] == "child"
+
+
+def test_signup_without_verification_duplicate_ids_and_one_login_for_both_roles():
+    c, _, svc = make()
+    assert c.post("/api/dev/verify", json={"ci": "x"}).status_code == 404  # no phone verification step at all
+    assert A.signup(c, "mom01").status_code == 201
+    dup = A.signup(c, "MoM01", email="other@x.kr")
+    assert dup.status_code == 409 and dup.json()["detail"]["code"] == "login_id_taken"
+    H = A.bearer(A.login(c, "mom01", A.PARENT_PW).json()["session"])
+    taken = c.post("/api/children", headers=H, json={"login_id": "MOM01", "password": "1234", "nickname": "a"})
+    assert taken.status_code == 409  # ids are unique across parents and children
+    cid = A.new_child(c, H, "별이", login_id="star01")
+    assert A.signup(c, "STAR01").status_code == 409
+    assert A.signup(c, "dad01", password="short").status_code == 422
+    rp = A.login(c, "mom01", A.PARENT_PW).json()
+    rc = A.login(c, "Star01", A.CHILD_PW).json()
+    assert (rp["role"], rc["role"], rc["account_id"]) == ("parent", "child", cid)
+    assert A.login(c, "mom01", "wrong-pass-1").status_code == 401
+    assert A.login(c, "nobody01", A.PARENT_PW).json()["detail"]["code"] == "invalid_credentials"
+    # children cannot self-register: there is no sign-up for them and a child session cannot create one
+    K = A.bearer(rc["session"])
+    assert c.post("/api/children", headers=K, json={"login_id": "kid2", "password": "1234",
+                                                    "nickname": "b"}).status_code == 403
+    assert c.post("/api/children", json={"login_id": "kid2", "password": "1234", "nickname": "b"}).status_code == 401
+    me = c.get("/api/auth/me", headers=K).json()
+    assert me["role"] == "child" and me["nickname"] == "별이"
+
+
+def test_child_session_is_refused_on_every_parent_api():
+    c, _, svc = make()
+    H = A.parent(c, "mom01", default=False)
+    cid = kid(c, H, login_id="star01")
+    K = A.child_login(c, "star01")
+    parent_only = [
+        ("get", "/api/children", None),
+        ("post", "/api/children", {"login_id": "x123", "password": "1234", "nickname": "x"}),
+        ("put", f"/api/children/{cid}/target", {"body": "korea_eomunhoe", "grade": "7"}),
+        ("get", f"/api/children/{cid}/plan", None), ("put", f"/api/children/{cid}/plan", {"daily_count": 5}),
+        ("get", f"/api/children/{cid}/report/basic", None), ("get", f"/api/children/{cid}/report/detailed", None),
+        ("get", f"/api/children/{cid}/conversations", None), ("get", f"/api/children/{cid}/safety-events", None),
+        ("get", f"/api/children/{cid}/screentime", None),
+        ("put", f"/api/children/{cid}/screentime", {"daily_minutes": 999}),
+        ("put", f"/api/children/{cid}/ai-consent", {"ai_consent": False}),
+        ("post", f"/api/children/{cid}/reset-password", {"password": "9999"}),
+        ("delete", f"/api/children/{cid}", None), ("delete", "/api/parents/me", None),
+        ("get", "/api/parents/me/notifications", None), ("get", "/api/parents/me/extension-requests", None),
+        ("get", "/api/parents/me/push-subscriptions", None), ("post", "/api/parents/me/push-test", {}),
+        ("get", "/api/billing/subscription", None),
+        ("post", "/api/billing/subscribe", {"plan_id": "monthly", "auth_key": "k"}),
+        ("post", "/api/refunds", {}),
+    ]
+    for method, url, body in parent_only:
+        r = c.request(method.upper(), url, headers=K, **({"json": body} if body is not None else {}))
+        assert r.status_code == 403, (method, url, r.status_code, r.text)
+        assert r.json()["detail"]["code"] == "parent_only", (url, r.text)
+    assert cid in svc["acc"].children and svc["acc"].children[cid].extra["target"] == ("korea_eomunhoe", "8")
+    # ...while the child's learning APIs work with the child session, and only for that child
+    for url in (f"/api/children/{cid}/today", f"/api/children/{cid}/usage", f"/api/children/{cid}/threads",
+                f"/api/children/{cid}/screentime/status", f"/api/children/{cid}/features"):
+        assert c.get(url, headers=K).status_code == 200, url
+    assert c.get(f"/api/children/{cid}/today", headers=NOAUTH).status_code == 401
+    other = kid(c, H, "달이", login_id="moon01")
+    assert c.get(f"/api/children/{other}/today", headers=K).status_code == 404  # not the sibling's data
+    H2 = A.parent(c, "dad01", default=False)
+    assert c.get(f"/api/children/{cid}/today", headers=H2).status_code == 404  # nor another family's
+    ex = c.post(f"/api/children/{cid}/exams", headers=K, json={"seed": 1}).json()
+    assert c.get(f"/api/exams/{ex['exam_id']}", headers=K).status_code == 200
+    assert c.get(f"/api/exams/{ex['exam_id']}", headers=A.child_login(c, "moon01")).status_code == 404
+    assert c.post(f"/api/exams/{ex['exam_id']}/submit", headers=NOAUTH).status_code == 401
 
 
 # ---- AC3 -------------------------------------------------------------------------------
@@ -111,9 +186,10 @@ def test_dormancy_sweep_job_notice_then_dormant():
     clock.t = T0 + timedelta(days=366)
     out = c.post("/api/admin/jobs/dormancy", headers={"X-Admin-Token": "adm"}).json()
     assert len(out["dormant"]) == 1 and svc["acc"].children == {}
-    # login restores (identity re-verification)
-    tok = c.post("/api/dev/verify", json={"ci": "ci-1"}).json()["verification_token"]
-    assert c.post("/api/parents/login", json={"verification_token": tok}).status_code == 200
+    assert c.get("/api/children").status_code == 401  # dormant: old sessions are gone
+    # logging in with id + password restores the dormant account (no identity re-verification)
+    r = A.login(c, "mom01", A.PARENT_PW)
+    assert r.status_code == 200 and r.json()["restored_from_dormancy"] is True
     assert len(svc["acc"].children) == 1
 
 
@@ -124,7 +200,7 @@ def test_parent_plan_edit_and_exam_date_drive_today():
     cid = kid(c, H, grade="7")
     p = c.get(f"/api/children/{cid}/plan", headers=H).json()
     assert p["exam_date"] is None and 3 <= p["today_quota"] <= 15
-    assert c.get(f"/api/children/{cid}/plan").status_code == 401
+    assert c.get(f"/api/children/{cid}/plan", headers=NOAUTH).status_code == 401
     r = c.put(f"/api/children/{cid}/plan", headers=H, json={"daily_count": 7})
     assert r.status_code == 200 and r.json()["today_quota"] == 7
     assert len(c.get(f"/api/children/{cid}/today").json()["new"]) == 7
@@ -271,8 +347,8 @@ def test_parent_sees_safety_events_without_raw_text():
     assert not any(f in str(ev) for f in ("010-1234-5678", "01012345678", "1234-5678", "010-1234"))
     notes = c.get("/api/parents/me/notifications", headers=H).json()
     assert any(n["kind"] == "safety_event" for n in notes)
-    assert c.get(f"/api/children/{cid}/safety-events").status_code == 401
-    H2 = login(c, "ci-2")
+    assert c.get(f"/api/children/{cid}/safety-events", headers=NOAUTH).status_code == 401
+    H2 = login(c, "dad01")
     assert c.get(f"/api/children/{cid}/safety-events", headers=H2).status_code == 404
 
 
@@ -341,7 +417,7 @@ def test_screentime_limit_warning_lock_extra_time_and_extension_request():
     H = login(c)
     cid = kid(c, H)
     assert c.put(f"/api/children/{cid}/screentime", headers=H, json={"daily_minutes": 10}).status_code == 200
-    assert c.put(f"/api/children/{cid}/screentime", json={"daily_minutes": 10}).status_code == 401
+    assert c.put(f"/api/children/{cid}/screentime", headers=NOAUTH, json={"daily_minutes": 10}).status_code == 401
     c.post(f"/api/children/{cid}/heartbeat")
     for m in range(1, 7):  # 6 minutes of use
         clock.t = T0 + timedelta(minutes=m)
@@ -362,10 +438,14 @@ def test_screentime_limit_warning_lock_extra_time_and_extension_request():
     assert c.get(f"/api/children/{cid}/extension-requests/{rq['id']}").json()["status"] == "approved"
     assert c.get(f"/api/children/{cid}/screentime/status").json()["locked"] is False
     assert c.get(f"/api/children/{cid}/today").status_code == 200
-    # parent PIN on the child's device grants extra time
-    assert c.put("/api/parents/me/pin", headers=H, json={"pin": "9999"}).status_code == 200
-    assert c.post(f"/api/children/{cid}/screentime/extra", json={"parent_pin": "0000", "minutes": 10}).status_code == 403
-    assert c.post(f"/api/children/{cid}/screentime/extra", json={"parent_pin": "9999", "minutes": 10}).status_code == 200
+    # the parent's ACCOUNT password typed on the child's device (child session) grants extra time
+    K = A.child_login(c, svc["acc"].children[cid].login_id)
+    extra = f"/api/children/{cid}/screentime/extra"
+    assert c.put("/api/parents/me/pin", headers=H, json={"pin": "9999"}).status_code in (404, 405)  # PIN is gone
+    assert c.post(extra, headers=K, json={"parent_password": "0000", "minutes": 10}).status_code == 403
+    r = c.post(extra, headers=K, json={"parent_password": A.CHILD_PW, "minutes": 10})  # the child's own password
+    assert r.status_code == 403 and r.json()["detail"]["code"] == "invalid_parent_password"
+    assert c.post(extra, headers=K, json={"parent_password": A.PARENT_PW, "minutes": 10}).status_code == 200
     # rejection path
     clock.t = T0 + timedelta(minutes=60)
     for m in range(61, 100):
@@ -394,10 +474,10 @@ def test_lock_waits_for_running_exam():
 # ---- AC12 ------------------------------------------------------------------------------
 def test_weekly_summary_job_only_for_subscribers():
     c, clock, svc = make()
-    Hs = login(c, "ci-sub")
+    Hs = login(c, "mom-sub")
     kid(c, Hs, "구독이")
     c.post("/api/billing/subscribe", headers=Hs, json={"plan_id": "monthly", "auth_key": "k"})
-    Hf = login(c, "ci-free")
+    Hf = login(c, "mom-free")
     kid(c, Hf, "무료")
     assert c.post("/api/admin/jobs/weekly-summary").status_code == 403
     sent = c.post("/api/admin/jobs/weekly-summary", headers={"X-Admin-Token": "adm"}).json()["sent"]
