@@ -39,7 +39,7 @@ export default function StrokePad({ onStroke, disabled, guide, highlight, wrong,
     const g = c.getContext("2d");
     if (!g) return;
     g.clearRect(0, 0, SIZE, SIZE);
-    for (const s of guide ?? []) line(g, s, 28, "#e3e8e4");
+    for (const s of guide ?? []) line(g, s, 28, "#d9e2de");
     for (const s of accepted ?? []) line(g, s, 10, "#1d2b22");
     if (highlight) line(g, highlight, 18, "#2e9e5b");
     if (wrong) line(g, wrong, 12, "#e0533d");
@@ -66,7 +66,8 @@ export default function StrokePad({ onStroke, disabled, guide, highlight, wrong,
       ref={ref}
       width={SIZE}
       height={SIZE}
-      className="pad"
+      // 田字格 practice grid behind the transparent canvas; the pad stays light in dark mode so ink colours keep their contrast
+      className="mx-auto block aspect-square w-full max-w-80 touch-none rounded-2xl border-[3px] border-brand-600 bg-white shadow-inner dark:border-brand-400 [background-image:linear-gradient(to_right,transparent_calc(50%-1px),#ecf4f2_calc(50%-1px),#ecf4f2_calc(50%+1px),transparent_calc(50%+1px)),linear-gradient(to_bottom,transparent_calc(50%-1px),#ecf4f2_calc(50%-1px),#ecf4f2_calc(50%+1px),transparent_calc(50%+1px))]"
       data-testid="stroke-pad"
       data-wrong={wrong ? "1" : "0"}
       data-answer={highlight ? "1" : "0"}

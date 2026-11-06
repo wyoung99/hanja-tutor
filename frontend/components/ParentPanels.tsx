@@ -4,6 +4,7 @@ import { api, ApiError, passwordError, pct } from "../lib/api";
 import { disablePush, enablePush, pushState, PUSH_STATE_TEXT, type PushState } from "../lib/push";
 import { gradeLabel } from "../lib/strokes";
 import type { Child } from "./ChildPanels";
+import { Alert, Badge, Bubble, Button, Card, CardTitle, Check, cx, Field, inputClass, Muted, ProgressBar } from "./ui";
 
 const err = (e: unknown) => (e instanceof ApiError ? (e.detail?.message ?? e.detail?.code ?? "error") : "error");
 
@@ -30,29 +31,51 @@ export function ChildCard({ k, bodyName, reload }: { k: Child & { login_id?: str
     await api(`/children/${k.id}`, { method: "DELETE" });
     reload();
   }
+  const toggle = (which: "plan" | "time" | "password") => ({
+    "aria-expanded": open === which,
+    onClick: () => setOpen(open === which ? "" : which),
+    className: cx(open === which && "border-brand-500 bg-brand-50 dark:border-brand-500 dark:bg-brand-900/50"),
+  });
   return (
-    <section className="card" data-testid="child-card">
-      <strong>{k.nickname}</strong> <small data-testid={`login-id-${k.nickname}`}>(아이디 {k.login_id})</small> · {bodyName} {k.target[1] ? gradeLabel(k.target[1]) : ""}
-      {k.locked && <span className="badge" data-testid={`locked-${k.nickname}`}> 🔒 비밀번호 5회 오류로 잠김</span>}
-      <div>
-        <button className="secondary" data-testid={`plan-${k.nickname}`} onClick={() => setOpen(open === "plan" ? "" : "plan")}>학습 계획</button>
-        <button className="secondary" data-testid={`time-${k.nickname}`} onClick={() => setOpen(open === "time" ? "" : "time")}>사용 시간</button>
-        <button className="secondary" data-testid={`password-${k.nickname}`} onClick={() => setOpen(open === "password" ? "" : "password")}>비밀번호 재설정</button>
+    <Card data-testid="child-card" className="space-y-4">
+      <div className="flex items-start gap-3">
+        <span aria-hidden="true" className="inline-flex size-12 shrink-0 items-center justify-center rounded-2xl bg-warning-100 text-xl font-bold text-warning-900 dark:bg-warning-900/50 dark:text-warning-100">
+          {k.nickname.slice(0, 1)}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <strong className="text-lg">{k.nickname}</strong>
+            <small className="text-sm text-muted" data-testid={`login-id-${k.nickname}`}>(아이디 {k.login_id})</small>
+          </p>
+          <p className="mt-1 flex flex-wrap items-center gap-1.5">
+            <Badge tone="brand">{bodyName} {k.target[1] ? gradeLabel(k.target[1]) : ""}</Badge>
+            {k.locked && <Badge tone="danger" data-testid={`locked-${k.nickname}`}> 🔒 비밀번호 5회 오류로 잠김</Badge>}
+          </p>
+        </div>
       </div>
-      <label className="check"><input type="checkbox" data-testid={`consent-${k.nickname}`} checked={k.ai_consent} onChange={toggleConsent} />AI 처리 동의 (끄면 챗봇만 꺼져요)</label>
+      <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-3">
+        <Button variant="secondary" size="sm" data-testid={`plan-${k.nickname}`} {...toggle("plan")}>학습 계획</Button>
+        <Button variant="secondary" size="sm" data-testid={`time-${k.nickname}`} {...toggle("time")}>사용 시간</Button>
+        <Button variant="secondary" size="sm" data-testid={`password-${k.nickname}`} {...toggle("password")}>비밀번호 재설정</Button>
+      </div>
       {open === "password" && (
-        <div>
-          <input data-testid={`newpassword-${k.nickname}`} type="password" autoComplete="new-password" placeholder="새 비밀번호 (4자 이상)" value={pw} onChange={(e) => setPw(e.target.value)} />
-          <button data-testid={`resetpassword-${k.nickname}`} onClick={resetPassword}>비밀번호 바꾸고 잠금 풀기</button>
+        <div className={subPanel}>
+          <input className={inputClass} data-testid={`newpassword-${k.nickname}`} type="password" autoComplete="new-password" placeholder="새 비밀번호 (4자 이상)" value={pw} onChange={(e) => setPw(e.target.value)} />
+          <Button data-testid={`resetpassword-${k.nickname}`} onClick={resetPassword}>비밀번호 바꾸고 잠금 풀기</Button>
         </div>
       )}
       {open === "plan" && <PlanEditor childId={k.id} />}
       {open === "time" && <ScreenTimeEditor childId={k.id} />}
-      {msg && <p data-testid={`child-msg-${k.nickname}`}>{msg}</p>}
-      <button className="secondary danger" data-testid={`delete-${k.nickname}`} onClick={remove}>자녀 계정 삭제</button>
-    </section>
+      {msg && <Alert tone="info" data-testid={`child-msg-${k.nickname}`}>{msg}</Alert>}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
+        <Check data-testid={`consent-${k.nickname}`} checked={k.ai_consent} onChange={toggleConsent} className="text-sm">AI 처리 동의 (끄면 챗봇만 꺼져요)</Check>
+        <Button variant="danger" size="sm" data-testid={`delete-${k.nickname}`} onClick={remove}>자녀 계정 삭제</Button>
+      </div>
+    </Card>
   );
 }
+
+const subPanel = "space-y-3 rounded-2xl border border-line bg-soft/60 p-4";
 
 function PlanEditor({ childId }: { childId: string }) {
   const [plan, setPlan] = useState<any>(null);
@@ -70,12 +93,14 @@ function PlanEditor({ childId }: { childId: string }) {
     } catch (e) { setMsg(err(e)); }
   }
   return (
-    <div className="sub" data-testid="plan-editor">
-      <label>시험일 (비우면 90일 계획)<input type="date" data-testid="plan-date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
-      <label>하루 새 한자 수 (3~15, 비우면 자동 균등 분배)<input type="number" min={3} max={15} data-testid="plan-count" value={count} onChange={(e) => setCount(e.target.value)} /></label>
-      <button data-testid="plan-save" onClick={save}>계획 저장</button>
-      {plan && <p data-testid="plan-summary">오늘 새 한자 {plan.today_quota}자 · 남은 한자 {plan.remaining}자 · 남은 날 {plan.days_left}일{plan.feasible ? "" : " (하루 15자를 넘어 시험일까지 다 배우기 어려워요)"}</p>}
-      {msg && <p data-testid="plan-msg">{msg}</p>}
+    <div className={subPanel} data-testid="plan-editor">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="시험일" hint="(비우면 90일 계획)"><input className={inputClass} type="date" data-testid="plan-date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+        <Field label="하루 새 한자 수" hint="(3~15, 비우면 자동 균등 분배)"><input className={inputClass} type="number" min={3} max={15} data-testid="plan-count" value={count} onChange={(e) => setCount(e.target.value)} /></Field>
+      </div>
+      <Button data-testid="plan-save" onClick={save}>계획 저장</Button>
+      {plan && <Alert tone={plan.feasible ? "brand" : "warning"} data-testid="plan-summary">오늘 새 한자 {plan.today_quota}자 · 남은 한자 {plan.remaining}자 · 남은 날 {plan.days_left}일{plan.feasible ? "" : " (하루 15자를 넘어 시험일까지 다 배우기 어려워요)"}</Alert>}
+      {msg && <p className="text-sm font-semibold text-success-700 dark:text-success-300" data-testid="plan-msg">{msg}</p>}
     </div>
   );
 }
@@ -99,17 +124,29 @@ function ScreenTimeEditor({ childId }: { childId: string }) {
     } catch (e) { setMsg(err(e)); }
   }
   return (
-    <div className="sub" data-testid="screentime-editor">
-      <label>하루 총 사용 시간(분, 비우면 제한 없음)<input type="number" min={1} data-testid="st-daily" value={daily} onChange={(e) => setDaily(e.target.value)} /></label>
-      <label>사용 가능 시간대 시작<input type="time" data-testid="st-from" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
-      <label>사용 가능 시간대 끝<input type="time" data-testid="st-to" value={to} onChange={(e) => setTo(e.target.value)} /></label>
-      <button data-testid="st-save" onClick={save}>사용 시간 저장</button>
-      {msg && <p data-testid="st-msg">{msg}</p>}
+    <div className={subPanel} data-testid="screentime-editor">
+      <Field label="하루 총 사용 시간(분, 비우면 제한 없음)"><input className={inputClass} type="number" min={1} data-testid="st-daily" value={daily} onChange={(e) => setDaily(e.target.value)} /></Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="사용 가능 시간대 시작"><input className={inputClass} type="time" data-testid="st-from" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
+        <Field label="사용 가능 시간대 끝"><input className={inputClass} type="time" data-testid="st-to" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
+      </div>
+      <Button data-testid="st-save" onClick={save}>사용 시간 저장</Button>
+      {msg && <p className="text-sm font-semibold text-success-700 dark:text-success-300" data-testid="st-msg">{msg}</p>}
     </div>
   );
 }
 
 // ---------------------------------------------------------------- reports + conversations + safety (AC8, AC12)
+function Stat({ label, value, bar }: { label: string; value: string; bar?: number | null }) {
+  return (
+    <li className="rounded-2xl border border-line bg-soft/60 p-4">
+      <span className="block text-sm font-semibold text-muted">{label}: </span>
+      <span className="mt-1 block text-2xl font-extrabold tracking-tight">{value}</span>
+      {bar !== undefined && <ProgressBar className="mt-3" value={bar} label={label} />}
+    </li>
+  );
+}
+
 export function Reports({ kids }: { kids: Child[] }) {
   const [sel, setSel] = useState(kids[0]?.id ?? "");
   const k = kids.find((x) => x.id === sel) ?? kids[0];
@@ -120,42 +157,47 @@ export function Reports({ kids }: { kids: Child[] }) {
     setDetail(null); setMsg("");
     if (k) api(`/children/${k.id}/report/basic`).then(setBasic).catch(() => undefined);
   }, [k?.id]);
-  if (!k) return <p>자녀를 먼저 만들어 주세요.</p>;
+  if (!k) return <Alert tone="info" className="mx-auto max-w-xl text-base">자녀를 먼저 만들어 주세요.</Alert>;
   async function loadDetail() {
     setMsg("");
     try { setDetail(await api(`/children/${k.id}/report/detailed`)); }
     catch (e) { setMsg(e instanceof ApiError && e.status === 402 ? "상세 리포트는 구독 전용이에요." : "오류가 발생했어요."); }
   }
   return (
-    <>
+    <div className="space-y-6">
       {kids.length > 1 && (
-        <select data-testid="report-child" value={k.id} onChange={(e) => setSel(e.target.value)}>
-          {kids.map((x) => <option key={x.id} value={x.id}>{x.nickname}</option>)}
-        </select>
+        <Field label="자녀 선택" className="max-w-xs">
+          <select className={inputClass} data-testid="report-child" value={k.id} onChange={(e) => setSel(e.target.value)}>
+            {kids.map((x) => <option key={x.id} value={x.id}>{x.nickname}</option>)}
+          </select>
+        </Field>
       )}
-      <section className="card" aria-label="리포트">
-        <h2>{k.nickname} 기본 리포트 (무료)</h2>
+      <Card aria-label="리포트">
+        <CardTitle aside={<Button variant="secondary" size="sm" data-testid="detail-report" onClick={loadDetail}>상세 리포트 보기</Button>}>
+          {k.nickname} 기본 리포트 (무료)
+        </CardTitle>
         {basic && (
-          <ul data-testid="basic-report">
-            <li>학습 시간: {basic.study_minutes_total}분</li>
-            <li>오늘의 한자 완료율: {pct(basic.todays_hanja.completion_rate)}</li>
-            <li>복습 정답률: {pct(basic.review.accuracy)}</li>
+          <ul data-testid="basic-report" className="grid gap-3 sm:grid-cols-3">
+            <Stat label="학습 시간" value={`${basic.study_minutes_total}분`} />
+            <Stat label="오늘의 한자 완료율" value={pct(basic.todays_hanja.completion_rate)} bar={basic.todays_hanja.completion_rate} />
+            <Stat label="복습 정답률" value={pct(basic.review.accuracy)} bar={basic.review.accuracy} />
           </ul>
         )}
-        <button data-testid="detail-report" onClick={loadDetail}>상세 리포트 보기</button>
-        {msg && <p role="alert" data-testid="detail-msg">{msg}</p>}
+        {msg && <Alert tone="warning" role="alert" className="mt-4" data-testid="detail-msg">{msg}</Alert>}
         {detail && (
-          <div data-testid="detail-body">
-            <p>취약 한자: {detail.weak_hanja.slice(0, 10).map((w: any) => w.char).join(" ") || "-"}</p>
-            <p>모의고사 점수 추이: {detail.mock_exam_trend.map((t: any) => t.score).join(" → ") || "-"}</p>
-            <p>합격 가능성: {detail.pass_likelihood ? (detail.pass_likelihood.likely_pass ? "높음" : "노력 필요") + ` (최근 평균 ${detail.pass_likelihood.average_score.toFixed(1)}점 / 합격선 ${detail.pass_likelihood.pass_score}점)` : "-"}</p>
-            <p>쓰기 완료 한자: {detail.writing_completed_count}자</p>
-          </div>
+          <dl data-testid="detail-body" className="mt-4 grid gap-x-6 gap-y-3 rounded-2xl border border-line p-4 text-[15px] sm:grid-cols-[auto_1fr]">
+            <dt className="font-semibold text-muted">취약 한자:</dt><dd className="font-hanja text-lg">{detail.weak_hanja.slice(0, 10).map((w: any) => w.char).join(" ") || "-"}</dd>
+            <dt className="font-semibold text-muted">모의고사 점수 추이:</dt><dd>{detail.mock_exam_trend.map((t: any) => t.score).join(" → ") || "-"}</dd>
+            <dt className="font-semibold text-muted">합격 가능성:</dt><dd>{detail.pass_likelihood ? (detail.pass_likelihood.likely_pass ? "높음" : "노력 필요") + ` (최근 평균 ${detail.pass_likelihood.average_score.toFixed(1)}점 / 합격선 ${detail.pass_likelihood.pass_score}점)` : "-"}</dd>
+            <dt className="font-semibold text-muted">쓰기 완료 한자:</dt><dd>{detail.writing_completed_count}자</dd>
+          </dl>
         )}
-      </section>
-      <Conversations child={k} />
-      <SafetyEvents child={k} />
-    </>
+      </Card>
+      <div className="grid items-start gap-6 lg:grid-cols-2">
+        <Conversations child={k} />
+        <SafetyEvents child={k} />
+      </div>
+    </div>
   );
 }
 
@@ -174,17 +216,26 @@ function Conversations({ child }: { child: Child }) {
     load();
   }
   return (
-    <section className="card" aria-label="대화 열람" data-testid="parent-conversations">
-      <h2>대화 열람 (무료)</h2>
-      {threads.length === 0 && <p>저장된 대화가 없어요.</p>}
-      {threads.map((t) => (
-        <div key={t.thread_id}>
-          <button className="secondary" data-testid="pc-thread" onClick={() => view(t.thread_id)}>{t.title || "(제목 없음)"} · {t.last_message_at.slice(0, 16).replace("T", " ")}</button>
-          <button className="secondary" data-testid="pc-delete" onClick={() => del(t.thread_id)}>삭제</button>
+    <Card aria-label="대화 열람" data-testid="parent-conversations">
+      <CardTitle aside={<Badge tone="brand">{threads.length}</Badge>}>대화 열람 (무료)</CardTitle>
+      {threads.length === 0 && <Muted>저장된 대화가 없어요.</Muted>}
+      <ul className="divide-y divide-line">
+        {threads.map((t) => (
+          <li key={t.thread_id} className="flex items-center gap-2 py-1.5">
+            <button type="button" data-testid="pc-thread" aria-current={open?.id === t.thread_id ? "true" : undefined} onClick={() => view(t.thread_id)}
+              className={cx("min-h-11 flex-1 truncate rounded-lg px-2 text-left text-[15px] font-medium hover:bg-soft", open?.id === t.thread_id && "bg-brand-50 text-brand-800 dark:bg-brand-900/50 dark:text-brand-200")}>
+              {t.title || "(제목 없음)"} · <span className="text-sm text-muted">{t.last_message_at.slice(0, 16).replace("T", " ")}</span>
+            </button>
+            <Button variant="danger" size="sm" data-testid="pc-delete" onClick={() => del(t.thread_id)}>삭제</Button>
+          </li>
+        ))}
+      </ul>
+      {open && (
+        <div data-testid="pc-messages" className="mt-4 flex max-h-96 flex-col gap-3 overflow-y-auto rounded-2xl border border-line bg-bg p-3">
+          {open.messages.map((m, i) => <Bubble key={i} role={m.role === "user" ? "user" : "bot"}>{m.content}</Bubble>)}
         </div>
-      ))}
-      {open && <div data-testid="pc-messages">{open.messages.map((m, i) => <div key={i} className={`msg ${m.role === "user" ? "user" : "bot"}`}>{m.content}</div>)}</div>}
-    </section>
+      )}
+    </Card>
   );
 }
 
@@ -194,11 +245,15 @@ function SafetyEvents({ child }: { child: Child }) {
   const [events, setEvents] = useState<any[]>([]);
   useEffect(() => { api(`/children/${child.id}/safety-events`).then(setEvents).catch(() => undefined); }, [child.id]);
   return (
-    <section className="card" aria-label="안전 알림" data-testid="safety-events">
-      <h2>차단된 입력 기록 (원문은 저장하지 않아요)</h2>
-      {events.length === 0 && <p>차단된 입력이 없어요.</p>}
-      <ul>{events.map((e) => <li key={e.id} data-testid="safety-event">{e.at.slice(0, 16).replace("T", " ")} · {CATEGORY[e.category] ?? e.category} · 같은 대화 {e.thread_count}회째{e.thread_count >= 3 ? " (오늘 챗봇 잠김)" : ""}</li>)}</ul>
-    </section>
+    <Card aria-label="안전 알림" data-testid="safety-events">
+      <CardTitle aside={<Badge tone={events.length ? "danger" : "success"}>{events.length}건</Badge>}>차단된 입력 기록 (원문은 저장하지 않아요)</CardTitle>
+      {events.length === 0 && <Muted>차단된 입력이 없어요.</Muted>}
+      <ul className="space-y-2">{events.map((e) => (
+        <li key={e.id} data-testid="safety-event" className="rounded-xl border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-900 dark:border-danger-900 dark:bg-danger-950/50 dark:text-danger-100">
+          {e.at.slice(0, 16).replace("T", " ")} · {CATEGORY[e.category] ?? e.category} · 같은 대화 {e.thread_count}회째{e.thread_count >= 3 ? " (오늘 챗봇 잠김)" : ""}
+        </li>
+      ))}</ul>
+    </Card>
   );
 }
 
@@ -227,16 +282,20 @@ export function PushSettings() {
     setMsg(r ? (r.push === "sent" ? "테스트 알림을 보냈어요." : r.email ? "푸시를 보내지 못해 이메일로 보냈어요." : "알림함에 넣었어요.") : "보내지 못했어요.");
   }
   return (
-    <section className="card" aria-label="푸시 알림" data-testid="push-settings">
-      <h2>기기 푸시 알림</h2>
-      <p>안전 알림·연장 요청·주간 요약(구독)·무료 한도 안내를 이 기기로 받아요. 아이 대화 원문은 알림에 담기지 않아요.</p>
-      <p data-testid="push-state" data-state={state}>{state === "loading" ? "확인 중…" : PUSH_STATE_TEXT[state]}</p>
-      {state !== "on" && state !== "unsupported" && state !== "not_configured" && (
-        <button data-testid="push-on" onClick={on}>푸시 알림 켜기</button>)}
-      {state === "on" && <button className="secondary" data-testid="push-off" onClick={off}>푸시 알림 끄기</button>}
-      <button className="secondary" data-testid="push-test" onClick={test}>테스트 알림 보내기</button>
-      {msg && <p data-testid="push-msg">{msg}</p>}
-    </section>
+    <Card aria-label="푸시 알림" data-testid="push-settings">
+      <CardTitle>기기 푸시 알림</CardTitle>
+      <Muted className="-mt-2 mb-4">안전 알림·연장 요청·주간 요약(구독)·무료 한도 안내를 이 기기로 받아요. 아이 대화 원문은 알림에 담기지 않아요.</Muted>
+      <p className="mb-4" data-testid="push-state" data-state={state}>
+        <Badge tone={state === "on" ? "success" : state === "error" ? "danger" : "neutral"} className="px-3 py-1 text-sm">{state === "loading" ? "확인 중…" : PUSH_STATE_TEXT[state]}</Badge>
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {state !== "on" && state !== "unsupported" && state !== "not_configured" && (
+          <Button data-testid="push-on" onClick={on}>푸시 알림 켜기</Button>)}
+        {state === "on" && <Button variant="secondary" data-testid="push-off" onClick={off}>푸시 알림 끄기</Button>}
+        <Button variant="secondary" data-testid="push-test" onClick={test}>테스트 알림 보내기</Button>
+      </div>
+      {msg && <Alert tone="info" className="mt-4" data-testid="push-msg">{msg}</Alert>}
+    </Card>
   );
 }
 
@@ -261,25 +320,38 @@ export function Alerts() {
     load();
   }
   return (
-    <>
-      <section className="card" aria-label="연장 요청">
-        <h2>사용 시간 연장 요청</h2>
-        {reqs.length === 0 && <p>대기 중인 요청이 없어요.</p>}
-        {reqs.map((r) => (
-          <div key={r.id} data-testid="ext-request">
-            {r.nickname}: {r.minutes}분 더 쓰고 싶어요
-            <button data-testid="ext-approve" onClick={() => resolve(r.id, true)}>허락</button>
-            <button className="secondary" data-testid="ext-reject" onClick={() => resolve(r.id, false)}>거절</button>
-          </div>
-        ))}
-      </section>
-      <p className="card">아이 기기의 &lsquo;쉬는 시간&rsquo; 화면에서 부모님 계정 비밀번호를 입력하면 바로 시간을 더 줄 수 있어요.</p>
-      <PushSettings />
-      <section className="card" aria-label="알림">
-        <h2>알림</h2>
-        <ul>{[...notes].reverse().map((n) => <li key={n.seq} data-testid={`note-${n.kind}`}>{KIND[n.kind] ?? n.kind}{n.payload?.message ? ` — ${n.payload.message}` : ""}{n.payload?.nickname ? ` (${n.payload.nickname})` : ""}</li>)}</ul>
-      </section>
-    </>
+    <div className="grid items-start gap-6 lg:grid-cols-2">
+      <div className="space-y-6">
+        <Card aria-label="연장 요청">
+          <CardTitle aside={<Badge tone={reqs.length ? "warning" : "neutral"}>{reqs.length}</Badge>}>사용 시간 연장 요청</CardTitle>
+          {reqs.length === 0 && <Muted>대기 중인 요청이 없어요.</Muted>}
+          <ul className="space-y-2">
+            {reqs.map((r) => (
+              <li key={r.id} data-testid="ext-request" className="flex flex-wrap items-center gap-3 rounded-2xl border border-warning-200 bg-warning-50 p-3 dark:border-warning-900 dark:bg-warning-950/40">
+                <span className="flex-1 font-semibold">{r.nickname}: {r.minutes}분 더 쓰고 싶어요</span>
+                <span className="flex gap-2">
+                  <Button size="sm" variant="success" data-testid="ext-approve" onClick={() => resolve(r.id, true)}>허락</Button>
+                  <Button size="sm" variant="secondary" data-testid="ext-reject" onClick={() => resolve(r.id, false)}>거절</Button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+        <Alert tone="brand">아이 기기의 &lsquo;쉬는 시간&rsquo; 화면에서 부모님 계정 비밀번호를 입력하면 바로 시간을 더 줄 수 있어요.</Alert>
+        <PushSettings />
+      </div>
+      <Card aria-label="알림">
+        <CardTitle aside={<Badge tone="brand">{notes.length}</Badge>}>알림</CardTitle>
+        {notes.length === 0 && <Muted>아직 받은 알림이 없어요.</Muted>}
+        <ul className="divide-y divide-line">{[...notes].reverse().map((n) => (
+          <li key={n.seq} data-testid={`note-${n.kind}`} className="flex gap-3 py-3 text-[15px]">
+            <span aria-hidden="true" className={cx("mt-1.5 size-2.5 shrink-0 rounded-full",
+              n.kind === "safety_event" || n.kind === "payment_failed" ? "bg-danger-500" : n.kind === "extension_request" || n.kind === "usage_limit_reached" ? "bg-warning-500" : "bg-brand-500")} />
+            <span>{KIND[n.kind] ?? n.kind}{n.payload?.message ? ` — ${n.payload.message}` : ""}{n.payload?.nickname ? ` (${n.payload.nickname})` : ""}</span>
+          </li>
+        ))}</ul>
+      </Card>
+    </div>
   );
 }
 
@@ -301,11 +373,15 @@ export function Account({ onDeleted }: { onDeleted: () => void }) {
     catch (e) { setMsg(err(e)); }
   }
   return (
-    <section className="card" aria-label="계정">
-      <h2>계정</h2>
-      <p>1년 동안 접속하지 않으면 30일 전에 안내한 뒤 휴면 계정으로 바뀌어요. 아이디와 비밀번호로 다시 로그인하면 복구돼요.</p>
-      <button className="danger" data-testid="delete-account" onClick={del}>계정 삭제</button>
-      {msg && <p className="err">{msg}</p>}
-    </section>
+    <Card aria-label="계정" className="mx-auto max-w-2xl">
+      <CardTitle>계정</CardTitle>
+      <Muted>1년 동안 접속하지 않으면 30일 전에 안내한 뒤 휴면 계정으로 바뀌어요. 아이디와 비밀번호로 다시 로그인하면 복구돼요.</Muted>
+      <div className="mt-6 rounded-2xl border border-danger-200 bg-danger-50/60 p-4 dark:border-danger-900 dark:bg-danger-950/30">
+        <h3 className="font-bold text-danger-800 dark:text-danger-200">위험 구역</h3>
+        <p className="mt-1 mb-3 text-sm text-danger-800 dark:text-danger-200">삭제하면 모든 자녀의 학습 기록과 대화가 즉시 사라져요.</p>
+        <Button variant="danger" data-testid="delete-account" onClick={del}>계정 삭제</Button>
+      </div>
+      {msg && <Alert tone="danger" className="mt-4">{msg}</Alert>}
+    </Card>
   );
 }

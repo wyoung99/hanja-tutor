@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api, setAuth } from "../../../lib/api";
+import { AuthShell, buttonClass, Card } from "../../../components/ui";
 
 /** Toss Payments redirect target after card registration (requestBillingAuth). */
 export default function BillingSuccess() {
@@ -12,5 +13,12 @@ export default function BillingSuccess() {
       .then(() => setMsg("구독이 시작됐어요. 앱으로 돌아가세요."))
       .catch(() => setMsg("결제에 실패했어요."));
   }, []);
-  return <main><p>{msg}</p><a href="/">돌아가기</a></main>;
+  return (
+    <AuthShell subtitle="구독 결제">
+      <Card className="space-y-4 text-center">
+        <p className="text-lg font-semibold" role="status">{msg}</p>
+        <a href="/" className={buttonClass("primary", "md", "w-full no-underline hover:no-underline dark:text-brand-950")}>돌아가기</a>
+      </Card>
+    </AuthShell>
+  );
 }
