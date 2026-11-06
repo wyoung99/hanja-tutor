@@ -158,6 +158,12 @@ def lookup_many(dictionary, terms: Sequence[str]) -> dict:
     return dict(zip(terms, _POOL.map(dictionary.lookup, terms)))
 
 
+def prefetch_lookups(dictionary, terms: Sequence[str]) -> None:
+    """Warm the client's cache in the background (fire and forget)."""
+    for t in terms:
+        _POOL.submit(dictionary.lookup, t)
+
+
 def syllable_candidates(kb: HanjaKnowledge, target: Optional[tuple], stem: str) -> Optional[List[Tuple[str, List[str]]]]:
     """[(syllable, [hanja...])] when every syllable has DB hanja with that 음 in the child's body, else None.
 

@@ -15,7 +15,7 @@ from usage import FeatureLocked, child_notice
 from .dictionary import DictionaryClient
 from .knowledge import HANJA_CLASS, HANJA_RE, HanjaKnowledge
 from .safety import Gate, LLMClassifier, gate_from_label, rule_gate
-from .wordquery import lookup_many, resolve_word, syllable_candidates
+from .wordquery import lookup_many, prefetch_lookups, resolve_word, syllable_candidates
 
 KST = timezone(timedelta(hours=9))
 SAFETY_LOCK_THRESHOLD = 3          # events in one conversation (any type) -> locked for the day
@@ -261,6 +261,7 @@ class ChatbotService:
         body = target[0] if target else None
         cands, res, _ = word if word is not None else self.resolve_word(message)
         q_chars = list(dict.fromkeys(HANJA_RE.findall(message)))
+        msg_chars = list(q_chars)
         sources: List[str] = []
         notes: List[str] = []
         word_lines: List[str] = []
@@ -273,7 +274,11 @@ class ChatbotService:
             word_lines.append(line)
             if res.definition:
                 word_lines.append(f"우리말샘 뜻풀이: {res.definition}")
-            word_lines.append(f"'{res.word}'이(가) 어떤 한자로 이루어졌는지 한 글자씩 DB 훈·음으로 풀어 낱말 뜻을 쉽게 설명한다.")
+            word_lines.append(f"'{res.word}'이(가) 어떤 한자로 이루어졌는지 한 글자씩 DB 훈·음으로 풀고, 낱말 뜻은 "
+                              "우리말샘 뜻풀이를 따라 쉽게 설명한다. 글자 뜻을 이어 붙여 낱말 뜻을 지어내지 않는다.")
+            not_in_db = [c for c in res.hanja if not self.kb.entry(c, body)]
+            if not_in_db:
+                word_lines.append("DB에 없는 글자: " + ", ".join(not_in_db) + " (이 글자의 훈·음은 쓰지 않는다)")
             sources.append("urimalsaem")
         elif res is not None:
             word_lines.append(f"학생이 묻는 낱말: {res.word} (우리말샘에 한자 원어가 없는 우리말"
@@ -288,6 +293,14 @@ class ChatbotService:
         known = [c for c in q_chars if self.kb.entry(c, body)]
         unresolved: List[str] = []
         missing = [c for c in q_chars if c not in known]
+        if known and self.dictionary:
+            # chars that came only from the resolved word (not typed by the child): the answer can be grounded in
+            # the known ones, so their 우리말샘 lookups are only prefetched (cache) and do not delay the first token;
+            # post-processing adds the note if the answer uses the char
+            prefetch = [c for c in missing if c not in msg_chars]
+            if prefetch:
+                prefetch_lookups(self.dictionary, prefetch)
+            missing = [c for c in missing if c in msg_chars]
         found = lookup_many(self.dictionary, missing) if self.dictionary else {}
         noted: set = set()
         for c in missing:

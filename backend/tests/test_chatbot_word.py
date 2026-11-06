@@ -321,4 +321,5 @@ def test_word_char_missing_from_db_gets_one_urimalsaem_note(mode):
     assert done["status"] == "answered"
     assert "학생이 묻는 낱말: 사과(沙果)" in b.answer_prompt
     assert "果: 훈 실과, 음 과 (상위 급수)" in b.answer_prompt and "沙:" not in b.answer_prompt.split("[DB]")[1]
+    assert "DB에 없는 글자: 沙" in b.answer_prompt and "지어내지 않는다" in b.answer_prompt
     assert done["reply"].count("'沙'은(는)") == 1 and "우리말샘에서 찾았어요: 모래." in done["reply"]
