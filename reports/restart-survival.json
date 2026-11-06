@@ -1,5 +1,5 @@
 {
-  "measured_at": "2026-11-05T08:05:08.339083+00:00",
+  "measured_at": "2026-11-06T02:31:57.157276+00:00",
   "state_store": "postgres",
   "postgres_restarted_between_runs": true,
   "compared": [
@@ -20,7 +20,8 @@
   "before": {
     "children": [
       {
-        "id": "e567130363014b2388eee94bafef3690",
+        "id": "18eb9710f6e846aaa98d65a25ad7b672",
+        "login_id": "restart-kid",
         "nickname": "별이",
         "ai_consent": true,
         "locked": false,
@@ -40,10 +41,6 @@
       "remaining": 49,
       "overridden": true,
       "schedule": [
-        {
-          "date": "2026-11-05",
-          "count": 4
-        },
         {
           "date": "2026-11-06",
           "count": 4
@@ -90,6 +87,10 @@
         },
         {
           "date": "2026-11-17",
+          "count": 4
+        },
+        {
+          "date": "2026-11-18",
           "count": 1
         }
       ]
@@ -99,14 +100,23 @@
       "grade": "8",
       "exam": {
         "status": "available",
-        "message": null
+        "message": null,
+        "questions": 50,
+        "minutes": 50,
+        "total_score": 50,
+        "pass_score": 35,
+        "pass_questions": 35,
+        "points_per_question": 1,
+        "type_mix": "partial_substitution",
+        "notice": "일부 유형은 준비 중이라 비슷한 유형으로 대체됐어요",
+        "all_multiple_choice": true
       },
       "new": [
         {
           "char": "校",
           "hun": "학교",
           "eum": "교",
-          "reviewed": false,
+          "reviewed": true,
           "strokes": 10,
           "tracing": "graded"
         },
@@ -114,7 +124,7 @@
           "char": "敎",
           "hun": "가르칠",
           "eum": "교",
-          "reviewed": false,
+          "reviewed": true,
           "strokes": 0,
           "tracing": "unavailable"
         },
@@ -122,7 +132,7 @@
           "char": "九",
           "hun": "아홉",
           "eum": "구",
-          "reviewed": false,
+          "reviewed": true,
           "strokes": 2,
           "tracing": "graded"
         },
@@ -130,7 +140,7 @@
           "char": "國",
           "hun": "나라",
           "eum": "국",
-          "reviewed": false,
+          "reviewed": true,
           "strokes": 11,
           "tracing": "graded"
         }
@@ -138,8 +148,8 @@
       "reviews": []
     },
     "active_exam": {
-      "exam_id": "78f4a9ac2cce4f4f8b6caa6baaed15dc",
-      "deadline": "2026-11-05T17:55:02.048757+09:00",
+      "exam_id": "967178170c2a4b9da4d687917f82ce7b",
+      "deadline": "2026-11-06T12:21:49.772028+09:00",
       "answers": {
         "q1": "장"
       }
@@ -148,24 +158,24 @@
     "chatbot_used_today": 1,
     "threads": [
       {
-        "thread_id": "6dd9365fbeda40dc86921a998bae8629",
+        "thread_id": "fb8330aec7c64502b803c2b4decba696",
         "title": "",
-        "created_at": "2026-11-05T17:05:02.096059+09:00",
-        "last_message_at": "2026-11-05T17:05:02.096059+09:00"
+        "created_at": "2026-11-06T11:31:49.837769+09:00",
+        "last_message_at": "2026-11-06T11:31:49.837769+09:00"
       },
       {
-        "thread_id": "c95010ad2f3249b68d095938d38aa2e7",
+        "thread_id": "5eb1308a58fc45699054524d5096d22a",
         "title": "學이 뭐예요?",
-        "created_at": "2026-11-05T17:05:02.074747+09:00",
-        "last_message_at": "2026-11-05T17:05:02.091980+09:00"
+        "created_at": "2026-11-06T11:31:49.808627+09:00",
+        "last_message_at": "2026-11-06T11:31:49.833041+09:00"
       }
     ],
     "safety_events": [
       {
-        "id": "c79f1d7f9f1f4b08a5e78a2812e99b82",
+        "id": "c5abf07c37f4437e880d0fcff77af897",
         "category": "pii",
         "source": "rule",
-        "at": "2026-11-05T17:05:02.097427+09:00",
+        "at": "2026-11-06T11:31:49.839453+09:00",
         "thread_count": 1,
         "parent_notified": true
       }
@@ -179,22 +189,18 @@
     "subscription": {
       "plan_id": "monthly",
       "status": "active",
-      "period_end": "2026-12-05T17:05:02.105423+09:00",
+      "period_end": "2026-12-06T11:31:49.850617+09:00",
       "child_ids": [
-        "e567130363014b2388eee94bafef3690"
+        "18eb9710f6e846aaa98d65a25ad7b672"
       ]
     },
     "report_basic": {
-      "child_id": "e567130363014b2388eee94bafef3690",
+      "child_id": "18eb9710f6e846aaa98d65a25ad7b672",
       "days": 7,
-      "from": "2026-10-30",
-      "to": "2026-11-05",
+      "from": "2026-10-31",
+      "to": "2026-11-06",
       "study_minutes_total": 0.0,
       "study_minutes_per_day": [
-        {
-          "date": "2026-10-30",
-          "study_minutes": 0.0
-        },
         {
           "date": "2026-10-31",
           "study_minutes": 0.0
@@ -217,6 +223,10 @@
         },
         {
           "date": "2026-11-05",
+          "study_minutes": 0.0
+        },
+        {
+          "date": "2026-11-06",
           "study_minutes": 0.0
         }
       ],
@@ -235,7 +245,8 @@
   "after": {
     "children": [
       {
-        "id": "e567130363014b2388eee94bafef3690",
+        "id": "18eb9710f6e846aaa98d65a25ad7b672",
+        "login_id": "restart-kid",
         "nickname": "별이",
         "ai_consent": true,
         "locked": false,
@@ -255,10 +266,6 @@
       "remaining": 49,
       "overridden": true,
       "schedule": [
-        {
-          "date": "2026-11-05",
-          "count": 4
-        },
         {
           "date": "2026-11-06",
           "count": 4
@@ -305,6 +312,10 @@
         },
         {
           "date": "2026-11-17",
+          "count": 4
+        },
+        {
+          "date": "2026-11-18",
           "count": 1
         }
       ]
@@ -314,14 +325,23 @@
       "grade": "8",
       "exam": {
         "status": "available",
-        "message": null
+        "message": null,
+        "questions": 50,
+        "minutes": 50,
+        "total_score": 50,
+        "pass_score": 35,
+        "pass_questions": 35,
+        "points_per_question": 1,
+        "type_mix": "partial_substitution",
+        "notice": "일부 유형은 준비 중이라 비슷한 유형으로 대체됐어요",
+        "all_multiple_choice": true
       },
       "new": [
         {
           "char": "校",
           "hun": "학교",
           "eum": "교",
-          "reviewed": false,
+          "reviewed": true,
           "strokes": 10,
           "tracing": "graded"
         },
@@ -329,7 +349,7 @@
           "char": "敎",
           "hun": "가르칠",
           "eum": "교",
-          "reviewed": false,
+          "reviewed": true,
           "strokes": 0,
           "tracing": "unavailable"
         },
@@ -337,7 +357,7 @@
           "char": "九",
           "hun": "아홉",
           "eum": "구",
-          "reviewed": false,
+          "reviewed": true,
           "strokes": 2,
           "tracing": "graded"
         },
@@ -345,7 +365,7 @@
           "char": "國",
           "hun": "나라",
           "eum": "국",
-          "reviewed": false,
+          "reviewed": true,
           "strokes": 11,
           "tracing": "graded"
         }
@@ -353,8 +373,8 @@
       "reviews": []
     },
     "active_exam": {
-      "exam_id": "78f4a9ac2cce4f4f8b6caa6baaed15dc",
-      "deadline": "2026-11-05T17:55:02.048757+09:00",
+      "exam_id": "967178170c2a4b9da4d687917f82ce7b",
+      "deadline": "2026-11-06T12:21:49.772028+09:00",
       "answers": {
         "q1": "장"
       }
@@ -363,24 +383,24 @@
     "chatbot_used_today": 1,
     "threads": [
       {
-        "thread_id": "6dd9365fbeda40dc86921a998bae8629",
+        "thread_id": "fb8330aec7c64502b803c2b4decba696",
         "title": "",
-        "created_at": "2026-11-05T17:05:02.096059+09:00",
-        "last_message_at": "2026-11-05T17:05:02.096059+09:00"
+        "created_at": "2026-11-06T11:31:49.837769+09:00",
+        "last_message_at": "2026-11-06T11:31:49.837769+09:00"
       },
       {
-        "thread_id": "c95010ad2f3249b68d095938d38aa2e7",
+        "thread_id": "5eb1308a58fc45699054524d5096d22a",
         "title": "學이 뭐예요?",
-        "created_at": "2026-11-05T17:05:02.074747+09:00",
-        "last_message_at": "2026-11-05T17:05:02.091980+09:00"
+        "created_at": "2026-11-06T11:31:49.808627+09:00",
+        "last_message_at": "2026-11-06T11:31:49.833041+09:00"
       }
     ],
     "safety_events": [
       {
-        "id": "c79f1d7f9f1f4b08a5e78a2812e99b82",
+        "id": "c5abf07c37f4437e880d0fcff77af897",
         "category": "pii",
         "source": "rule",
-        "at": "2026-11-05T17:05:02.097427+09:00",
+        "at": "2026-11-06T11:31:49.839453+09:00",
         "thread_count": 1,
         "parent_notified": true
       }
@@ -394,22 +414,18 @@
     "subscription": {
       "plan_id": "monthly",
       "status": "active",
-      "period_end": "2026-12-05T17:05:02.105423+09:00",
+      "period_end": "2026-12-06T11:31:49.850617+09:00",
       "child_ids": [
-        "e567130363014b2388eee94bafef3690"
+        "18eb9710f6e846aaa98d65a25ad7b672"
       ]
     },
     "report_basic": {
-      "child_id": "e567130363014b2388eee94bafef3690",
+      "child_id": "18eb9710f6e846aaa98d65a25ad7b672",
       "days": 7,
-      "from": "2026-10-30",
-      "to": "2026-11-05",
+      "from": "2026-10-31",
+      "to": "2026-11-06",
       "study_minutes_total": 0.0,
       "study_minutes_per_day": [
-        {
-          "date": "2026-10-30",
-          "study_minutes": 0.0
-        },
         {
           "date": "2026-10-31",
           "study_minutes": 0.0
@@ -432,6 +448,10 @@
         },
         {
           "date": "2026-11-05",
+          "study_minutes": 0.0
+        },
+        {
+          "date": "2026-11-06",
           "study_minutes": 0.0
         }
       ],
