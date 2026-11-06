@@ -6,7 +6,7 @@
   (전자상거래법) before being purged.
 * Accounts inactive for 1 year get a notice 30 days before dormancy, then become dormant
   (data moved to separate storage). Dormant accounts are deleted 1 year after going dormant;
-  logging in again (identity re-verification) restores them.
+  logging in again with the parent's id + password restores them.
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Callable, Dict, List, Optional
 
-from accounts.service import AccountService, KST, NotFound
+from accounts.service import AccountService, KST, LoginResult, NotFound
 from conversations import ConversationService
 
 INACTIVITY_DAYS = 365
@@ -122,14 +122,13 @@ class LifecycleService:
         acc.remove_parent(parent_id)
 
     # ---- dormancy -----------------------------------------------------------
-    def login_parent(self, verification_token: str) -> str:
-        """Login via identity verification; restores a dormant account's data."""
-        before = set(self.accounts.dormant_parents)
-        session = self.accounts.login_parent(verification_token)
-        pid = self.accounts.parent_for_session(session).id
-        if pid in before:
-            self._restore_vault(pid)
-        return session
+    def login(self, login_id: str, password: str) -> LoginResult:
+        """id/password login for parents and children; a dormant parent account is restored together with
+        its separately stored data (Seed: 휴면 계정은 로그인 시 복귀)."""
+        result = self.accounts.login(login_id, password)
+        if result.restored_from_dormancy:
+            self._restore_vault(result.parent_id)
+        return result
 
     def _vault_child_threads(self, parent_id: str) -> None:
         conv = self.conversations

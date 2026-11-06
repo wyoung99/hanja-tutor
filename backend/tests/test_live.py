@@ -48,11 +48,11 @@ def test_tiers_use_haiku_for_chat_and_sonnet_for_questions(router):
 
 @pytest.mark.bedrock_live
 def test_haiku_chat_answer_is_db_grounded_and_3_to_5_sentences(router):
-    from accounts.service import AccountService, FakeIdentityVerifier
+    from accounts.service import AccountService
     from chatbot.service import ChatbotService
 
-    acc = AccountService(FakeIdentityVerifier())
-    p = acc.signup_parent(acc.verifier.complete_verification("live"), "a@b.kr", True, True, True)
+    acc = AccountService()
+    p = acc.signup_parent("p-live", "parent-pw-1", "a@b.kr", True, True, True)
     c = acc.create_child(p.id, "별이", "1234", ai_consent=True)
     c.extra["target"] = ("korea_eomunhoe", "8")
     bot = ChatbotService(acc, HanjaKnowledge.from_store(STORE), router.for_task("chat"),

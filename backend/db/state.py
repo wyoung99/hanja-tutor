@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 log = logging.getLogger("hanja.state")
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # 2: id/password accounts (child_sessions, parent_password_failures; parent_pins dropped)
 
 # (key, child_id, parent_id, doc)
 Row = Tuple[str, Optional[str], Optional[str], dict]
@@ -34,10 +34,10 @@ Row = Tuple[str, Optional[str], Optional[str], dict]
 # Every persisted collection. payments and payment_archive are separate tables on purpose (AC3: payment
 # records of deleted accounts move to the separate 5-year retention table).
 TABLES: Tuple[str, ...] = (
-    "parents", "children", "dormant_parents", "dormant_children", "parent_sessions",
+    "parents", "children", "dormant_parents", "dormant_children", "parent_sessions", "child_sessions",
     "study_plans", "review_items", "tracing_progress", "tracing_attempts", "mock_exams",
     "report_days", "review_answers", "weekly_summaries_sent",
-    "screentime_settings", "screentime_days", "parent_pins", "extension_requests",
+    "screentime_settings", "screentime_days", "parent_password_failures", "extension_requests",
     "safety_events", "safety_thread_counts", "chat_locks",
     "paid_usage_events", "usage_limit_notices",
     "subscriptions", "payments", "payment_archive", "refund_requests",
@@ -88,6 +88,8 @@ class PostgresStateBackend(StateBackend):
                           " doc JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())")
                 c.execute(f"CREATE INDEX IF NOT EXISTS {t}_child ON {t} (child_id)")
                 c.execute(f"CREATE INDEX IF NOT EXISTS {t}_parent ON {t} (parent_id)")
+            # v2 (2026-11-06): the parent PIN was replaced by the parent's account password -> obsolete PIN hashes go
+            c.execute("DROP TABLE IF EXISTS parent_pins")
             c.execute("INSERT INTO app_schema_version (version) VALUES (%s) ON CONFLICT DO NOTHING",
                       (SCHEMA_VERSION,))
 

@@ -6,9 +6,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from accounts.service import AccountService, FakeIdentityVerifier, Forbidden  # noqa: E402
+from accounts.service import AccountService, Forbidden  # noqa: E402
 from screentime import (  # noqa: E402
-    ScreenTimeService, AppLocked, InvalidParentPin, ParentPinLocked, SettingsInvalid,
+    ScreenTimeService, AppLocked, InvalidParentPassword, ParentPasswordLocked, SettingsInvalid,
 )
 
 KST = timezone(timedelta(hours=9))
@@ -28,16 +28,14 @@ class Clock:
 @pytest.fixture
 def env():
     clock = Clock(datetime(2026, 3, 2, 15, 0, tzinfo=KST))
-    v = FakeIdentityVerifier()
-    acc = AccountService(v, clock=clock)
-    p = acc.signup_parent(v.complete_verification("ci1"), "a@b.co", True, True, True)
+    acc = AccountService(clock=clock)
+    p = acc.signup_parent("p-ci1", "parent-pw-1", "a@b.co", True, True, True)
     child = acc.create_child(p.id, "민수", "1234")
-    other = acc.signup_parent(v.complete_verification("ci2"), "c@d.co", True, True, True)
+    other = acc.signup_parent("p-ci2", "parent-pw-1", "c@d.co", True, True, True)
     exam = {"on": False}
     pushes = []
     st = ScreenTimeService(acc, clock, exam_in_progress=lambda c: exam["on"],
                            notify_parent=lambda pid, k, d: pushes.append((pid, k, d)))
-    st.set_parent_pin(p.id, "9999")
     return st, clock, p, child, other, exam, pushes
 
 
@@ -103,15 +101,16 @@ def test_lock_deferred_during_mock_exam(env):
     assert not st.can_start_exam(c.id)
 
 
-def test_parent_pin_extra_time(env):
+def test_parent_password_extra_time(env):
+    """AC11: extra time on the child's device needs the parent's ACCOUNT password (the old parent PIN is gone)."""
     st, clock, p, c, *_ = env
     st.set_limits(p.id, c.id, daily_minutes=5)
     use(st, clock, c, 6)
     assert st.status(c.id)["locked"]
-    with pytest.raises(InvalidParentPin):
+    with pytest.raises(InvalidParentPassword):
         st.grant_extra_time(p.id, c.id, "0000", 10)
     assert st.status(c.id)["locked"]
-    s = st.grant_extra_time(p.id, c.id, "9999", 10)
+    s = st.grant_extra_time(p.id, c.id, "parent-pw-1", 10)
     assert not s["locked"] and s["seconds_left"] == 600
     use(st, clock, c, 10)
     assert st.status(c.id)["locked"]
@@ -121,22 +120,26 @@ def test_extra_time_overrides_window(env):
     st, clock, p, c, *_ = env
     st.set_limits(p.id, c.id, windows=[("09:00", "10:00")])
     assert st.status(c.id)["locked"]
-    s = st.grant_extra_time(p.id, c.id, "9999", 20)
+    s = st.grant_extra_time(p.id, c.id, "parent-pw-1", 20)
     assert not s["locked"] and s["seconds_left"] == 1200
     clock.adv(minutes=21)
     assert st.status(c.id)["locked"]
 
 
-def test_parent_pin_lockout_and_ownership(env):
+def test_parent_password_lockout_cleared_by_parent_login_and_ownership(env):
     st, clock, p, c, other, *_ = env
+    st.set_limits(p.id, c.id, daily_minutes=5)
     for _ in range(5):
-        with pytest.raises(InvalidParentPin):
+        with pytest.raises(InvalidParentPassword):
             st.grant_extra_time(p.id, c.id, "1111", 5)
-    with pytest.raises(ParentPinLocked):
-        st.grant_extra_time(p.id, c.id, "9999", 5)
-    st.set_parent_pin(other.id, "4444")
+    with pytest.raises(ParentPasswordLocked):
+        st.grant_extra_time(p.id, c.id, "parent-pw-1", 5)
+    st.accounts.login(p.login_id, "parent-pw-1")  # a parent login clears the device lock
+    with pytest.raises(InvalidParentPassword):  # the child's own password is not the parent's
+        st.grant_extra_time(p.id, c.id, "1234", 5)
+    assert st.grant_extra_time(p.id, c.id, "parent-pw-1", 5)["seconds_left"] >= 300
     with pytest.raises(Forbidden):
-        st.grant_extra_time(other.id, c.id, "4444", 5)
+        st.grant_extra_time(other.id, c.id, "parent-pw-1", 5)
     with pytest.raises(Forbidden):
         st.set_limits(other.id, c.id, daily_minutes=10)
 

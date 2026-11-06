@@ -1,26 +1,22 @@
 """Parental screen-time limits (KST): daily total, allowed time windows, 5-minute warning,
-lock (deferred while a mock exam is in progress), parent-PIN extra time and push-approved
-extension requests.
+lock (deferred while a mock exam is in progress), extra time granted on the child's device with the
+parent's account password, and push-approved extension requests.
 
 Safety/supervision feature: never gated by subscription.
 """
 from __future__ import annotations
 
-import hmac
-import secrets
 import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import Callable, Dict, List, Optional
 
-from accounts.service import (
-    AccountService, NotFound, PIN_RE, ValidationFailed, hash_pin,
-)
+from accounts.service import AccountService, NotFound, ValidationFailed
 
 KST = timezone(timedelta(hours=9))
 WARN_SECONDS = 300          # warn 5 minutes before the lock
 MAX_HEARTBEAT_GAP = 120     # seconds counted per heartbeat at most (app closed != usage)
-MAX_PARENT_PIN_FAILURES = 5
+MAX_PARENT_PASSWORD_FAILURES = 5  # on the child's device; a parent login clears it
 MAX_EXTRA_MINUTES = 240
 
 
@@ -36,12 +32,12 @@ class AppLocked(ScreenTimeError):
         self.reason = reason
 
 
-class InvalidParentPin(ScreenTimeError):
-    code = "invalid_parent_pin"
+class InvalidParentPassword(ScreenTimeError):
+    code = "invalid_parent_password"
 
 
-class ParentPinLocked(ScreenTimeError):
-    code = "parent_pin_locked"
+class ParentPasswordLocked(ScreenTimeError):
+    code = "parent_password_locked"
 
 
 class SettingsInvalid(ScreenTimeError):
@@ -104,8 +100,9 @@ class ScreenTimeService:
         self.notify_parent = notify_parent or (lambda p, k, d: None)
         self.settings: Dict[str, ScreenTimeSettings] = {}
         self._days: Dict[tuple, _Day] = {}
-        self._parent_pin: Dict[str, tuple] = {}  # parent_id -> (salt, hash)
-        self._pin_failures: Dict[str, int] = {}
+        # wrong parent passwords typed on a child's device (extra time), per parent
+        self._password_failures: Dict[str, int] = {}
+        accounts.on_parent_login.append(lambda pid: self._password_failures.pop(pid, None))
         self.requests: Dict[str, ExtensionRequest] = {}
 
     # ---- helpers ---------------------------------------------------------
@@ -118,27 +115,15 @@ class ScreenTimeService:
     def _owned(self, parent_id: str, child_id: str):
         return self.accounts._owned(parent_id, child_id)  # NotFound / Forbidden
 
-    # ---- parent PIN ------------------------------------------------------
-    def set_parent_pin(self, parent_id: str, pin: str) -> None:
-        if parent_id not in self.accounts.parents:
-            raise NotFound("parent")
-        if not PIN_RE.match(pin or ""):
-            raise ValidationFailed("PIN must be 4-6 digits")
-        salt = secrets.token_bytes(16)
-        self._parent_pin[parent_id] = (salt, hash_pin(pin, salt))
-        self._pin_failures[parent_id] = 0
-
-    def _check_parent_pin(self, parent_id: str, pin: str) -> None:
-        if self._pin_failures.get(parent_id, 0) >= MAX_PARENT_PIN_FAILURES:
-            raise ParentPinLocked("too many wrong parent PINs; reset it from your logged-in account")
-        rec = self._parent_pin.get(parent_id)
-        if rec is None:
-            raise InvalidParentPin("parent PIN not set")
-        if hmac.compare_digest(hash_pin(pin or "", rec[0]), rec[1]):
-            self._pin_failures[parent_id] = 0
+    # ---- parent password (extra time on the child's device) ---------------
+    def _check_parent_password(self, parent_id: str, password: str) -> None:
+        if self._password_failures.get(parent_id, 0) >= MAX_PARENT_PASSWORD_FAILURES:
+            raise ParentPasswordLocked("too many wrong parent passwords; log in to the parent account to unlock")
+        if self.accounts.verify_parent_password(parent_id, password):
+            self._password_failures.pop(parent_id, None)
             return
-        self._pin_failures[parent_id] = self._pin_failures.get(parent_id, 0) + 1
-        raise InvalidParentPin("wrong parent PIN")
+        self._password_failures[parent_id] = self._password_failures.get(parent_id, 0) + 1
+        raise InvalidParentPassword("wrong parent password")
 
     # ---- settings --------------------------------------------------------
     def set_limits(self, parent_id: str, child_id: str, daily_minutes: Optional[int] = None,
@@ -224,9 +209,9 @@ class ScreenTimeService:
         base = day.override_until if day.override_until and day.override_until > now else now
         day.override_until = base + timedelta(minutes=int(minutes))
 
-    def grant_extra_time(self, parent_id: str, child_id: str, parent_pin: str, minutes: int) -> dict:
+    def grant_extra_time(self, parent_id: str, child_id: str, parent_password: str, minutes: int) -> dict:
         self._owned(parent_id, child_id)
-        self._check_parent_pin(parent_id, parent_pin)
+        self._check_parent_password(parent_id, parent_password)
         self._grant(child_id, minutes)
         return self.status(child_id)
 

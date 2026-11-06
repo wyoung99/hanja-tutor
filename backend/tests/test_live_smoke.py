@@ -57,13 +57,13 @@ def router(live_env):
 
 
 def test_haiku_chat_answer_uses_db_reading_and_3_to_5_sentences(router):
-    from accounts.service import AccountService, FakeIdentityVerifier
+    from accounts.service import AccountService
     from chatbot.service import ChatbotService
 
     chat = router.for_task("chat")
     assert isinstance(chat, BedrockProvider) and "haiku-4-5" in chat.model_id
-    acc = AccountService(FakeIdentityVerifier())
-    p = acc.signup_parent(acc.verifier.complete_verification("smoke"), "a@b.kr", True, True, True)
+    acc = AccountService()
+    p = acc.signup_parent("p-smoke", "parent-pw-1", "a@b.kr", True, True, True)
     c = acc.create_child(p.id, "별이", "1234", ai_consent=True)
     c.extra["target"] = ("korea_eomunhoe", "8")
     bot = ChatbotService(acc, HanjaKnowledge.from_store(STORE), chat, use_llm_classifier=False)  # 1 Haiku call

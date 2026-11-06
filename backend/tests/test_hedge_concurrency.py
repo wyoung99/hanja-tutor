@@ -16,7 +16,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from accounts.service import AccountService, FakeIdentityVerifier  # noqa: E402
+from accounts.service import AccountService  # noqa: E402
 from chatbot.service import ChatbotService, RecordingNotifier  # noqa: E402
 from chatbot_cases import CASES  # noqa: E402
 from llm import (FAST, REASONING, FakeProvider, HedgedProvider, LLMError, LLMRouter,  # noqa: E402
@@ -30,9 +30,8 @@ Q = "學이 뭐예요?"
 
 
 def world(label="ON_TOPIC", cls_delay=0.0, ans_delay=0.0, chunk_delay=0.0, limit=5, answer=ANSWER):
-    ver = FakeIdentityVerifier()
-    acc = AccountService(ver)
-    p = acc.signup_parent(ver.complete_verification("ci1"), "p@x.kr", True, True, True)
+    acc = AccountService()
+    p = acc.signup_parent("p-ci1", "parent-pw-1", "p@x.kr", True, True, True)
     child = acc.create_child(p.id, "별이", "1234", ai_consent=True)
     child.extra["target"] = ("b", "8")
     clock = Clock(datetime(2026, 11, 5, 10, 0, tzinfo=KST))
@@ -168,9 +167,8 @@ def test_client_abort_after_first_token_cancels_answer_and_is_free():
 @pytest.mark.parametrize("message,expected", CASES)
 def test_labelled_guard_set_through_concurrent_stream_path(message, expected):
     """The 114-case set behaves as labelled on the streaming path too (fake classifier, as in test_chatbot)."""
-    ver = FakeIdentityVerifier()
-    acc = AccountService(ver)
-    p = acc.signup_parent(ver.complete_verification("ci1"), "p@x.kr", True, True, True)
+    acc = AccountService()
+    p = acc.signup_parent("p-ci1", "parent-pw-1", "p@x.kr", True, True, True)
     child = acc.create_child(p.id, "별이", "1234", ai_consent=True)
     child.extra["target"] = ("b", "8")
     llm = FakeProvider(lambda s, m: "OFF_TOPIC" if "분류기" in s else "답변이에요.")

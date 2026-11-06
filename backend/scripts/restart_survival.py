@@ -73,14 +73,18 @@ def main() -> int:
     p1 = start(port)
     try:
         with httpx.Client(base_url=f"http://127.0.0.1:{port}", timeout=30) as c:
-            tok = c.post("/api/dev/verify", json={"ci": "restart-demo"}).json()["verification_token"]
-            c.post("/api/parents/signup", json={"verification_token": tok, "email": "demo@example.com", "agree_terms": True,
+            c.post("/api/parents/signup", json={"login_id": "restart-demo", "password": "restart-demo-1",
+                                                "email": "demo@example.com", "agree_terms": True,
                                                 "agree_privacy": True, "agree_legal_guardian": True}).raise_for_status()
-            tok = c.post("/api/dev/verify", json={"ci": "restart-demo"}).json()["verification_token"]
-            H = {"Authorization": "Bearer " + c.post("/api/parents/login", json={"verification_token": tok}).json()["session"]}
-            cid = c.post("/api/children", headers=H, json={"nickname": "별이", "pin": "1234", "ai_consent": True}).json()["id"]
+            H = {"Authorization": "Bearer " + c.post("/api/auth/login", json={
+                "login_id": "restart-demo", "password": "restart-demo-1"}).json()["session"]}
+            cid = c.post("/api/children", headers=H, json={"login_id": "restart-kid", "password": "kid1234",
+                                                           "nickname": "별이", "ai_consent": True}).json()["id"]
             c.put(f"/api/children/{cid}/target", headers=H, json={"body": "korea_eomunhoe", "grade": "8"}).raise_for_status()
             c.put(f"/api/children/{cid}/plan", headers=H, json={"exam_date": None, "daily_count": 4}).raise_for_status()
+            K = {"Authorization": "Bearer " + c.post("/api/auth/login", json={
+                "login_id": "restart-kid", "password": "kid1234"}).json()["session"]}
+            c.headers.update(K)  # learning calls below: the child's own session
             today = c.get(f"/api/children/{cid}/today").json()
             c.post(f"/api/children/{cid}/today/{today['new'][0]['char']}/complete").raise_for_status()
             ex = c.post(f"/api/children/{cid}/exams", json={"seed": 1}).json()
@@ -98,7 +102,8 @@ def main() -> int:
     p2 = start(port)
     try:
         with httpx.Client(base_url=f"http://127.0.0.1:{port}", timeout=30) as c:
-            after = snapshot(c, H, cid)  # same bearer token: sessions survive too
+            c.headers.update(K)
+            after = snapshot(c, H, cid)  # same bearer tokens (parent + child): sessions survive too
             health = c.get("/api/health").json()
     finally:
         stop(p2)

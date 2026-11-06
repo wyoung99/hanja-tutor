@@ -20,7 +20,9 @@ def create_router(svc: BillingService, parent_of_session: Callable[[str], str]) 
     def pid(auth: Optional[str]) -> str:
         try:
             return parent_of_session((auth or "").removeprefix("Bearer ").strip())
-        except Exception:
+        except Exception as e:  # a child session is refused (403), no / unknown session is 401
+            if getattr(e, "code", "") == "parent_only":
+                raise HTTPException(403, {"code": "parent_only"})
             raise HTTPException(401, {"code": "login_required"})
 
     def guard(fn):

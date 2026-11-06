@@ -18,7 +18,7 @@ def contains_phone_fragment(text: str) -> bool:
     return any(f in text for f in _PHONE_FRAGMENTS)
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from accounts.service import AccountService, ChatbotDisabled, FakeIdentityVerifier, Forbidden  # noqa: E402
+from accounts.service import AccountService, ChatbotDisabled, Forbidden  # noqa: E402
 from chatbot.dictionary import FakeDictionary, UrimalsaemClient  # noqa: E402
 from chatbot.knowledge import HanjaKnowledge  # noqa: E402
 from chatbot.service import ChatbotService, RecordingNotifier  # noqa: E402
@@ -46,9 +46,8 @@ class Clock:
 
 
 def setup(handler=None, dictionary=None, consent=True, llm_classifier=True, t=None):
-    ver = FakeIdentityVerifier()
-    acc = AccountService(ver)
-    p = acc.signup_parent(ver.complete_verification("ci1"), "p@x.kr", True, True, True)
+    acc = AccountService()
+    p = acc.signup_parent("p-ci1", "parent-pw-1", "p@x.kr", True, True, True)
     child = acc.create_child(p.id, "별이", "1234", ai_consent=consent)
     child.extra["target"] = ("b", "8")
     llm = FakeProvider(handler or (lambda s, m: "OFF_TOPIC" if "분류기" in s else "답변이에요."))

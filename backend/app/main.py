@@ -23,8 +23,11 @@ Configuration (``backend/.env`` + process env, see ``app/settings.py`` and ``.en
 * ``VAPID_PUBLIC_KEY`` / ``VAPID_PRIVATE_KEY`` / ``VAPID_SUBJECT`` -> real Web Push to parents' browsers
   (``notifications``); missing -> in-app inbox + email fallback only.
 * ``STROKE_TOL_*`` -> stroke grading tolerances (library defaults otherwise).
-Non-production (``HANJA_ENV != "production"``) adds a fake identity verifier (``POST /api/dev/verify``) and a
-clock shift endpoint (``POST /api/dev/clock``) for timer tests; Toss is faked unless ``TOSS_SECRET_KEY`` is set.
+Accounts: parent sign-up with id + password (no phone verification), parent-created child accounts, one login
+(``POST /api/auth/login``) whose role comes from the id. Child (learning) routes need the child's session (or the
+owning parent's); parent (management) routes answer 403 ``parent_only`` to a child session.
+Non-production (``HANJA_ENV != "production"``) adds a clock shift endpoint (``POST /api/dev/clock``) for timer
+tests; Toss is faked unless ``TOSS_SECRET_KEY`` is set.
 """
 from __future__ import annotations
 
@@ -44,8 +47,8 @@ from pydantic import BaseModel
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from accounts.api import create_router as accounts_router  # noqa: E402
-from accounts.service import AccountError, AccountService, FakeIdentityVerifier  # noqa: E402
+from accounts.api import bearer, child_access, create_router as accounts_router, http_error  # noqa: E402
+from accounts.service import AccountError, AccountService  # noqa: E402
 from app.settings import aws_region, clean, load_runtime_env  # noqa: E402
 from billing import BillingConfig, BillingService, FakeTossGateway, RecordingEmail, TossHttpGateway  # noqa: E402
 from billing.api import create_router as billing_router  # noqa: E402
@@ -165,12 +168,8 @@ class ScreenTimeIn(BaseModel):
     windows: List[List[str]] = []        # [["15:00", "18:00"], ...]
 
 
-class ParentPinIn(BaseModel):
-    pin: str
-
-
 class ExtraTimeIn(BaseModel):
-    parent_pin: str
+    parent_password: str  # the parent types their account password on the child's device
     minutes: int
 
 
@@ -258,8 +257,7 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
     tol = GradeTolerance.from_env(env)
 
     # ---- services -----------------------------------------------------------
-    ver = FakeIdentityVerifier()
-    acc = AccountService(ver, clock)
+    acc = AccountService(clock)
     mail = RecordingEmail()
     db_url = database_url(env)
     sync = StateSync(PostgresStateBackend(db_url) if db_url else None)
@@ -437,28 +435,32 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
 
     # ---- auth helpers ----------------------------------------------------------------
     def parent_of_session(tok: str) -> str:
-        return acc.parent_for_session(tok).id
+        return acc.parent_for_session(tok).id  # LoginRequired (401) / ParentOnly (403 for a child session)
 
     def pid_from(auth: Optional[str]) -> str:
         try:
-            return parent_of_session((auth or "").removeprefix("Bearer ").strip())
-        except AccountError:
-            raise HTTPException(401, {"code": "login_required"})
+            return parent_of_session(bearer(auth))
+        except AccountError as e:
+            raise http_error(e)
 
     def child_for(auth: Optional[str], child_id: str):
-        pid = pid_from(auth) if auth else None
-        c = acc.children.get(child_id)
-        if c is None or (pid and c.parent_id != pid):
-            raise HTTPException(404, {"code": "not_found"})
-        return c
+        """Child (learning) routes: the child's own session or the owning parent's session."""
+        return child_access(acc, auth, child_id)
 
     def parent_child(auth: Optional[str], child_id: str):
-        """Parent-only routes: a valid session that owns the child."""
+        """Parent-only routes: a valid parent session that owns the child (a child session -> 403)."""
         pid = pid_from(auth)
         c = acc.children.get(child_id)
         if c is None or c.parent_id != pid:
             raise HTTPException(404, {"code": "not_found"})
         return pid, c
+
+    def exam_for(auth: Optional[str], exam_id: str):
+        e = exam.exams.get(exam_id)
+        if e is None:
+            raise HTTPException(404, {"code": "not_found"})
+        child_for(auth, e.profile_id)
+        return e
 
     def admin(tok: Optional[str]) -> None:
         import hmac
@@ -552,7 +554,7 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
     if sync.persistent:
         app.add_middleware(PersistMiddleware, flush=persist)
     api = APIRouter(prefix="/api")
-    api.include_router(accounts_router(acc, login=life.login_parent))
+    api.include_router(accounts_router(acc, login=life.login))
     api.include_router(billing_router(bill, parent_of_session))
     api.include_router(refunds_router(refunds, parent_of_session, admin_token))
 
@@ -569,10 +571,6 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
                 "web_push": push.push_enabled}
 
     if not production:
-        @api.post("/dev/verify")
-        def dev_verify(body: dict):
-            return {"verification_token": ver.complete_verification(str(body.get("ci", "ci-dev")))}
-
         @api.post("/dev/clock")
         def dev_clock(body: ClockIn):
             if not isinstance(clock, Clock):
@@ -588,7 +586,7 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
     # ---- parent: child target / plan --------------------------------------------------
     @api.put("/children/{child_id}/target")
     def set_target(child_id: str, body: TargetIn, authorization: Optional[str] = Header(None)):
-        c = child_for(authorization, child_id)
+        _, c = parent_child(authorization, child_id)
         if body.grade not in bodies.get(body.body, []):
             raise HTTPException(422, {"code": "unsupported_grade"})
         c.extra["target"] = (body.body, body.grade)
@@ -634,8 +632,8 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
 
     # ---- child: today / review ------------------------------------------------------
     @api.get("/children/{child_id}/today")
-    def today(child_id: str):
-        c = child_for(None, child_id)
+    def today(child_id: str, authorization: Optional[str] = Header(None)):
+        c = child_for(authorization, child_id)
         if not c.extra.get("target"):
             raise HTTPException(409, {"code": "no_target"})
         unlocked(child_id)
@@ -646,8 +644,8 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
                 "new": [card(child_id, x) for x in s["new"]], "reviews": [card(child_id, x) for x in s["reviews"]]}
 
     @api.get("/children/{child_id}/hanja/{char}")
-    def hanja_card(child_id: str, char: str):
-        child_for(None, child_id)
+    def hanja_card(child_id: str, char: str, authorization: Optional[str] = Header(None)):
+        child_for(authorization, child_id)
         if not target_of(child_id):
             raise HTTPException(409, {"code": "no_target"})
         ch = nfc(char)
@@ -664,8 +662,8 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
         return {"char": ch, "mode": tracing_mode(ch), "strokes": [[list(p) for p in s] for s in d.strokes]}
 
     @api.post("/children/{child_id}/today/{char}/complete")
-    def complete(child_id: str, char: str):
-        child_for(None, child_id)
+    def complete(child_id: str, char: str, authorization: Optional[str] = Header(None)):
+        child_for(authorization, child_id)
         unlocked(child_id)
         char = nfc(char)
         try:
@@ -675,8 +673,8 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
         return {"ok": True}
 
     @api.post("/children/{child_id}/reviews/{char}")
-    def review(child_id: str, char: str, body: ReviewIn):
-        child_for(None, child_id)
+    def review(child_id: str, char: str, body: ReviewIn, authorization: Optional[str] = Header(None)):
+        child_for(authorization, child_id)
         unlocked(child_id)
         char = nfc(char)
         try:
@@ -691,8 +689,8 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
         return tol.as_dict()
 
     @api.post("/children/{child_id}/tracing/{char}/start")
-    def trace_start(child_id: str, char: str):
-        child_for(None, child_id)
+    def trace_start(child_id: str, char: str, authorization: Optional[str] = Header(None)):
+        child_for(authorization, child_id)
         unlocked(child_id)
         char = nfc(char)
         r = start_attempt(char, sdb, tol)
@@ -703,8 +701,8 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
         return {"mode": r["mode"], "stroke_count": len(strokes_out), "strokes": strokes_out}
 
     @api.post("/children/{child_id}/tracing/{char}/stroke")
-    def trace_stroke(child_id: str, char: str, body: StrokeIn):
-        child_for(None, child_id)
+    def trace_stroke(child_id: str, char: str, body: StrokeIn, authorization: Optional[str] = Header(None)):
+        child_for(authorization, child_id)
         char = nfc(char)
         att = attempts.get(f"{child_id}:{char}")
         if att is None:
@@ -721,8 +719,8 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
 
     # ---- mock exam ----------------------------------------------------------
     @api.post("/children/{child_id}/exams")
-    def exam_start(child_id: str, body: ExamStartIn):
-        c = child_for(None, child_id)
+    def exam_start(child_id: str, body: ExamStartIn, authorization: Optional[str] = Header(None)):
+        c = child_for(authorization, child_id)
         t = c.extra.get("target")
         if not t:
             raise HTTPException(409, {"code": "no_target"})
@@ -739,15 +737,16 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
         return exam_view(e)
 
     @api.get("/children/{child_id}/exams/active")
-    def exam_active(child_id: str):
-        child_for(None, child_id)
+    def exam_active(child_id: str, authorization: Optional[str] = Header(None)):
+        child_for(authorization, child_id)
         e = exam._active(child_id)
         if e is None:
             raise HTTPException(404, {"code": "no_active_exam"})
         return exam_view(e)
 
     @api.get("/exams/{exam_id}")
-    def exam_get(exam_id: str):
+    def exam_get(exam_id: str, authorization: Optional[str] = Header(None)):
+        exam_for(authorization, exam_id)
         try:
             e = exam._get(exam_id)  # applies the wall-clock deadline (auto-submit)
         except ExamError:
@@ -755,7 +754,8 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
         return exam_view(e)
 
     @api.post("/exams/{exam_id}/answer")
-    def exam_answer(exam_id: str, body: AnswerIn):
+    def exam_answer(exam_id: str, body: AnswerIn, authorization: Optional[str] = Header(None)):
+        exam_for(authorization, exam_id)
         try:
             exam.answer(exam_id, body.question_id, body.value)
         except ExamError as e:
@@ -763,7 +763,8 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
         return {"ok": True}
 
     @api.post("/exams/{exam_id}/submit")
-    def exam_submit(exam_id: str):
+    def exam_submit(exam_id: str, authorization: Optional[str] = Header(None)):
+        exam_for(authorization, exam_id)
         try:
             return exam.submit(exam_id)
         except ExamError as e:
@@ -771,17 +772,17 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
 
     # ---- chatbot + conversations (child) ---------------------------------------------
     @api.post("/children/{child_id}/chat")
-    def chat(child_id: str, body: ChatIn):
-        child_for(None, child_id)
+    def chat(child_id: str, body: ChatIn, authorization: Optional[str] = Header(None)):
+        child_for(authorization, child_id)
         unlocked(child_id)
         tid, r = guard(lambda: conv.send(child_id, body.message, body.thread_id))
         return {"status": r.status, "reply": r.reply, "locked": r.locked_today, "thread_id": tid,
                 "sources": r.sources}
 
     @api.post("/children/{child_id}/chat/stream")
-    def chat_stream(child_id: str, body: ChatIn):
+    def chat_stream(child_id: str, body: ChatIn, authorization: Optional[str] = Header(None)):
         """SSE: thread -> token* -> done | error (error carries retry=True; the client shows a retry button)."""
-        child_for(None, child_id)
+        child_for(authorization, child_id)
         unlocked(child_id)
         guard(lambda: acc.require_chatbot(child_id))
         if body.thread_id:
@@ -801,23 +802,23 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     @api.get("/children/{child_id}/threads")
-    def threads(child_id: str):
-        child_for(None, child_id)
+    def threads(child_id: str, authorization: Optional[str] = Header(None)):
+        child_for(authorization, child_id)
         return [thread_json(m) for m in guard(lambda: conv.list_threads(child_id))]
 
     @api.post("/children/{child_id}/threads", status_code=201)
-    def new_thread(child_id: str):
-        child_for(None, child_id)
+    def new_thread(child_id: str, authorization: Optional[str] = Header(None)):
+        child_for(authorization, child_id)
         return thread_json(guard(lambda: conv.create_thread(child_id)))
 
     @api.get("/children/{child_id}/threads/{thread_id}")
-    def thread_messages(child_id: str, thread_id: str):
-        child_for(None, child_id)
+    def thread_messages(child_id: str, thread_id: str, authorization: Optional[str] = Header(None)):
+        child_for(authorization, child_id)
         return {"thread_id": thread_id, "messages": guard(lambda: conv.get_messages(child_id, thread_id))}
 
     @api.delete("/children/{child_id}/threads/{thread_id}")
-    def delete_thread(child_id: str, thread_id: str):
-        child_for(None, child_id)
+    def delete_thread(child_id: str, thread_id: str, authorization: Optional[str] = Header(None)):
+        child_for(authorization, child_id)
         guard(lambda: conv.delete_thread_by_child(child_id, thread_id))
         return {"ok": True}
 
@@ -861,14 +862,15 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
             raise HTTPException(402, {"code": "subscription_required"})
 
     @api.get("/children/{child_id}/usage")
-    def usage_view(child_id: str):
-        child_for(None, child_id)
+    def usage_view(child_id: str, authorization: Optional[str] = Header(None)):
+        child_for(authorization, child_id)
         return {"chatbot": usage.snapshot(child_id, CHATBOT), "mockexam": usage.snapshot(child_id, MOCKEXAM)}
 
     @api.get("/children")
     def children(authorization: Optional[str] = Header(None)):
         pid = pid_from(authorization)
-        return [{"id": c.id, "nickname": c.nickname, "ai_consent": c.ai_consent, "locked": c.locked,
+        return [{"id": c.id, "login_id": c.login_id, "nickname": c.nickname, "ai_consent": c.ai_consent,
+                 "locked": c.locked,
                  "target": list(c.extra.get("target") or []), "exam_date": c.extra.get("exam_date")}
                 for c in acc.children_of(pid)]
 
@@ -892,37 +894,31 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
         guard(lambda: st.set_limits(pid, child_id, body.daily_minutes, [tuple(w) for w in body.windows]))
         return st_json(child_id)
 
-    @api.put("/parents/me/pin")
-    def set_parent_pin(body: ParentPinIn, authorization: Optional[str] = Header(None)):
-        pid = pid_from(authorization)
-        guard(lambda: st.set_parent_pin(pid, body.pin))
-        return {"ok": True}
-
     @api.post("/children/{child_id}/heartbeat")
-    def heartbeat(child_id: str):
-        child_for(None, child_id)
+    def heartbeat(child_id: str, authorization: Optional[str] = Header(None)):
+        child_for(authorization, child_id)
         return st.heartbeat(child_id)
 
     @api.get("/children/{child_id}/screentime/status")
-    def st_status(child_id: str):
-        child_for(None, child_id)
+    def st_status(child_id: str, authorization: Optional[str] = Header(None)):
+        child_for(authorization, child_id)
         return st.status(child_id)
 
     @api.post("/children/{child_id}/screentime/extra")
-    def extra_time(child_id: str, body: ExtraTimeIn):
-        """Parent types their PIN on the child's device to grant extra minutes."""
-        c = child_for(None, child_id)
-        return guard(lambda: st.grant_extra_time(c.parent_id, child_id, body.parent_pin, body.minutes))
+    def extra_time(child_id: str, body: ExtraTimeIn, authorization: Optional[str] = Header(None)):
+        """The parent types their account password on the child's device to grant extra minutes."""
+        c = child_for(authorization, child_id)
+        return guard(lambda: st.grant_extra_time(c.parent_id, child_id, body.parent_password, body.minutes))
 
     @api.post("/children/{child_id}/extension-requests", status_code=201)
-    def ext_request(child_id: str, body: ExtensionIn):
-        child_for(None, child_id)
+    def ext_request(child_id: str, body: ExtensionIn, authorization: Optional[str] = Header(None)):
+        child_for(authorization, child_id)
         r = guard(lambda: st.request_extension(child_id, body.minutes))
         return {"id": r.id, "status": r.status, "minutes": r.minutes}
 
     @api.get("/children/{child_id}/extension-requests/{request_id}")
-    def ext_status(child_id: str, request_id: str):
-        child_for(None, child_id)
+    def ext_status(child_id: str, request_id: str, authorization: Optional[str] = Header(None)):
+        child_for(authorization, child_id)
         return {"id": request_id, "status": guard(lambda: st.request_status(child_id, request_id))}
 
     @api.get("/parents/me/extension-requests")

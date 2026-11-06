@@ -82,14 +82,19 @@ def hedge_delta(before: dict, after: dict) -> dict:
 
 
 def setup_child(c: httpx.Client) -> str:
-    ci = f"p95-{time.time_ns()}"
-    tok = c.post("/api/dev/verify", json={"ci": ci}).json()["verification_token"]
-    c.post("/api/parents/signup", json={"verification_token": tok, "email": f"{ci}@example.com",
-                                        "agree_terms": True, "agree_privacy": True, "agree_legal_guardian": True})
-    tok = c.post("/api/dev/verify", json={"ci": ci}).json()["verification_token"]
-    H = {"Authorization": "Bearer " + c.post("/api/parents/login", json={"verification_token": tok}).json()["session"]}
-    cid = c.post("/api/children", headers=H, json={"nickname": "측정", "pin": "1234", "ai_consent": True}).json()["id"]
+    """Parent signs up (id + password), creates the child account, then the CHILD logs in: the measured chat
+    requests carry the child's session (client default header)."""
+    uid = f"p95{time.time_ns() % 10**12}"
+    c.post("/api/parents/signup", json={"login_id": uid, "password": "measure-p95-1", "email": f"{uid}@example.com",
+                                        "agree_terms": True, "agree_privacy": True, "agree_legal_guardian": True}
+           ).raise_for_status()
+    login = c.post("/api/auth/login", json={"login_id": uid, "password": "measure-p95-1"}).json()
+    H = {"Authorization": "Bearer " + login["session"]}
+    cid = c.post("/api/children", headers=H, json={"login_id": uid + "k", "password": "kid1234", "nickname": "측정",
+                                                   "ai_consent": True}).json()["id"]
     c.put(f"/api/children/{cid}/target", headers=H, json={"body": "korea_eomunhoe", "grade": "8"}).raise_for_status()
+    kid = c.post("/api/auth/login", json={"login_id": uid + "k", "password": "kid1234"}).json()
+    c.headers["Authorization"] = "Bearer " + kid["session"]
     return cid
 
 

@@ -6,7 +6,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from accounts.service import AccountService, FakeIdentityVerifier
+from accounts.service import AccountService
+import auth_helpers as A  # noqa: E402
 from app.main import Clock, create_app
 from chatbot.knowledge import HanjaKnowledge
 from chatbot.service import ChatbotService, RecordingNotifier
@@ -40,7 +41,7 @@ def remembering_llm():
 
 def world(uri, accounts=None, clock=None):
     clock = clock or Tick()
-    acc = accounts or AccountService(FakeIdentityVerifier(), clock)
+    acc = accounts or AccountService(clock)
     bot = ChatbotService(acc, KB, remembering_llm(), None, RecordingNotifier(), clock, use_llm_classifier=False)
     conv = ConversationService(bot, acc, PostgresCheckpointer.from_conn_string(uri), PostgresThreadMeta(uri))
     return acc, bot, conv
@@ -55,8 +56,7 @@ def rows(conv, thread_id):
 
 
 def child(acc):
-    ver = acc.verifier
-    p = acc.signup_parent(ver.complete_verification("ci-" + uuid.uuid4().hex), "a@b.kr", True, True, True)
+    p = acc.signup_parent("p-" + uuid.uuid4().hex[:12], "parent-pw-1", "a@b.kr", True, True, True)
     c = acc.create_child(p.id, "별이", "1234", ai_consent=True)
     c.extra["target"] = ("korea_eomunhoe", "8")
     return p, c
@@ -125,12 +125,9 @@ def test_composed_app_on_postgres_resume_and_delete(pg_db):
     app = create_app(clock=clock, env={"DATABASE_URL": pg_db})
     c = TestClient(app)
     assert c.get("/api/health").json()["conversation_store"] == "postgres"
-    tok = c.post("/api/dev/verify", json={"ci": "pg"}).json()["verification_token"]
-    c.post("/api/parents/signup", json={"verification_token": tok, "email": "pg@x.kr", "agree_terms": True,
-                                        "agree_privacy": True, "agree_legal_guardian": True})
-    tok = c.post("/api/dev/verify", json={"ci": "pg"}).json()["verification_token"]
-    H = {"Authorization": "Bearer " + c.post("/api/parents/login", json={"verification_token": tok}).json()["session"]}
-    cid = c.post("/api/children", headers=H, json={"nickname": "별이", "pin": "1234", "ai_consent": True}).json()["id"]
+    H = A.parent(c, "mom-pgconv")
+    cid = A.new_child(c, H, "별이", login_id="star-pgconv")
+    c.headers.update(A.child_login(c, "star-pgconv"))  # the child chats in its own session
     c.put(f"/api/children/{cid}/target", headers=H, json={"body": "korea_eomunhoe", "grade": "8"})
     tid = c.post(f"/api/children/{cid}/chat/stream", json={"message": "學이 뭐예요?"}).text.split('"thread_id": "')[1][:32]
     assert [m["role"] for m in c.get(f"/api/children/{cid}/threads/{tid}").json()["messages"]] == ["user", "assistant"]
