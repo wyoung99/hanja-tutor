@@ -1,7 +1,9 @@
 /** Small local UI kit on top of Tailwind utilities (no component library). */
 import type { ButtonHTMLAttributes, ComponentPropsWithoutRef, ElementType, ReactNode } from "react";
+import { twMerge } from "tailwind-merge";
 
-export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
+/** Join classes; later utilities win over conflicting defaults (e.g. Card `p-0`, Badge `text-lg`). */
+export const cx = (...c: (string | false | null | undefined)[]) => twMerge(c.filter(Boolean).join(" "));
 
 // ---------------------------------------------------------------- buttons
 type Variant = "primary" | "secondary" | "ghost" | "danger" | "success";

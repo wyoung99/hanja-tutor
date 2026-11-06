@@ -15,12 +15,14 @@
     "test:live": "cd .. && python -m pytest backend/tests/test_live.py -m \"bedrock_live or urimalsaem_live\" -p no:cacheprovider -rs",
     "measure:p95": "cd .. && python backend/scripts/measure_p95.py --n 20",
     "lighthouse": "node scripts/lighthouse-pwa.mjs",
+    "screenshots": "node scripts/ui-screenshots.mjs",
     "test:env": "cd .. && python -m pytest backend/tests/test_pg_startup.py -m env_robustness -q -p no:cacheprovider -rfEs"
   },
   "dependencies": {
     "next": "^15.0.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "tailwind-merge": "3.7.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",

@@ -105,6 +105,7 @@
   html { -webkit-text-size-adjust: 100%; }
   body {
     @apply min-h-dvh bg-bg font-sans text-ink antialiased;
+    word-break: keep-all; /* Korean: wrap between words, not inside them */
     overflow-wrap: anywhere;
   }
   :focus-visible {
