@@ -1,20 +1,123 @@
-* { box-sizing: border-box; }
-body { margin: 0; font-family: system-ui, "Noto Sans KR", sans-serif; background: #f6faf7; color: #1d2b22; }
-main { max-width: 720px; margin: 0 auto; padding: 16px; }
-h1, h2 { margin: 8px 0; }
-button { font: inherit; padding: 10px 16px; border-radius: 10px; border: 1px solid #2f6f4f; background: #2f6f4f; color: #fff; cursor: pointer; margin: 4px 4px 4px 0; }
-button.secondary { background: #fff; color: #2f6f4f; }
-button:disabled { opacity: .5; cursor: default; }
-input, select { font: inherit; padding: 10px; border-radius: 8px; border: 1px solid #9bb; margin: 4px 0; width: 100%; }
-label { display: block; margin: 8px 0; }
-label.check { display: flex; gap: 8px; align-items: center; }
-label.check input { width: auto; }
-.card { background: #fff; border: 1px solid #d5e5da; border-radius: 14px; padding: 12px; margin: 10px 0; }
-.big { font-size: 64px; text-align: center; }
-.pad { touch-action: none; background: #fff; border: 2px solid #2f6f4f; border-radius: 12px; width: 100%; max-width: 320px; aspect-ratio: 1; display: block; }
-.msg { padding: 8px 12px; border-radius: 12px; margin: 6px 0; max-width: 90%; }
-.msg.user { background: #dff0e5; margin-left: auto; }
-.msg.bot { background: #fff; border: 1px solid #d5e5da; }
-.err { color: #b00020; }
-nav button { margin-right: 4px; }
-@media (max-width: 480px) { main { padding: 10px; } }
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------ design tokens
+ * brand   = warm teal (one brand colour; brand-700 is the PWA theme_color)
+ * success / warning / danger / info = semantic colours
+ * bg / card / soft / ink / muted / line = surface tokens that flip in dark mode
+ * Dark mode follows prefers-color-scheme (Tailwind's default `dark:` variant). */
+@theme {
+  --font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+    "Malgun Gothic", "맑은 고딕", "Noto Sans KR", "Noto Sans CJK KR", system-ui, sans-serif;
+  --font-hanja: "Noto Serif KR", "Noto Serif CJK KR", "Source Han Serif K", "Batang", "바탕", "AppleMyungjo",
+    "Noto Serif CJK TC", serif;
+
+  --color-brand-50: #f0fdfa;
+  --color-brand-100: #ccfbf1;
+  --color-brand-200: #99f6e4;
+  --color-brand-300: #5eead4;
+  --color-brand-400: #2dd4bf;
+  --color-brand-500: #14b8a6;
+  --color-brand-600: #0d9488;
+  --color-brand-700: #0f766e;
+  --color-brand-800: #115e59;
+  --color-brand-900: #134e4a;
+  --color-brand-950: #042f2e;
+
+  --color-success-50: #ecfdf5;
+  --color-success-100: #d1fae5;
+  --color-success-200: #a7f3d0;
+  --color-success-300: #6ee7b7;
+  --color-success-500: #10b981;
+  --color-success-600: #059669;
+  --color-success-700: #047857;
+  --color-success-800: #065f46;
+  --color-success-900: #064e3b;
+  --color-success-950: #022c22;
+
+  --color-warning-50: #fffbeb;
+  --color-warning-100: #fef3c7;
+  --color-warning-200: #fde68a;
+  --color-warning-300: #fcd34d;
+  --color-warning-500: #f59e0b;
+  --color-warning-600: #d97706;
+  --color-warning-700: #b45309;
+  --color-warning-800: #92400e;
+  --color-warning-900: #78350f;
+  --color-warning-950: #451a03;
+
+  --color-danger-50: #fff1f2;
+  --color-danger-100: #ffe4e6;
+  --color-danger-200: #fecdd3;
+  --color-danger-300: #fda4af;
+  --color-danger-500: #f43f5e;
+  --color-danger-600: #e11d48;
+  --color-danger-700: #be123c;
+  --color-danger-800: #9f1239;
+  --color-danger-900: #881337;
+  --color-danger-950: #4c0519;
+
+  --color-info-50: #f0f9ff;
+  --color-info-100: #e0f2fe;
+  --color-info-200: #bae6fd;
+  --color-info-300: #7dd3fc;
+  --color-info-500: #0ea5e9;
+  --color-info-600: #0284c7;
+  --color-info-700: #0369a1;
+  --color-info-800: #075985;
+  --color-info-900: #0c4a6e;
+  --color-info-950: #082f49;
+
+  --radius-card: 1.25rem;
+  --shadow-card: 0 1px 2px rgb(15 40 36 / 0.06), 0 4px 16px -4px rgb(15 40 36 / 0.08);
+}
+
+@theme inline {
+  --color-bg: var(--surface-bg);
+  --color-card: var(--surface-card);
+  --color-soft: var(--surface-soft);
+  --color-ink: var(--surface-ink);
+  --color-muted: var(--surface-muted);
+  --color-line: var(--surface-line);
+}
+
+:root {
+  color-scheme: light dark;
+  --surface-bg: #f3f8f7;
+  --surface-card: #ffffff;
+  --surface-soft: #eaf4f2;
+  --surface-ink: #0f1f1d;
+  --surface-muted: #4a5d59;
+  --surface-line: #d6e5e1;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface-bg: #0a1413;
+    --surface-card: #111f1d;
+    --surface-soft: #172a27;
+    --surface-ink: #e5f1ee;
+    --surface-muted: #9fb5b0;
+    --surface-line: #26403b;
+  }
+}
+
+/* ------------------------------------------------------------------ base tweaks */
+@layer base {
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    @apply min-h-dvh bg-bg font-sans text-ink antialiased;
+    word-break: keep-all; /* Korean: wrap between words, not inside them */
+    overflow-wrap: anywhere;
+  }
+  :focus-visible {
+    outline: 3px solid var(--color-brand-500);
+    outline-offset: 2px;
+  }
+  a { @apply font-semibold text-brand-700 underline-offset-4 hover:underline dark:text-brand-300; }
+  button:not(:disabled), [role="button"]:not(:disabled) { cursor: pointer; }
+}
+
+/* scrollbar-less horizontal rails (tab bars, thread chips) */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}

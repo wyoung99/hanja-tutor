@@ -1,5 +1,5 @@
 /* Service worker: app-shell cache + offline fallback; never caches /api responses. */
-const CACHE = "hanja-shell-v2";
+const CACHE = "hanja-shell-v3";
 const SHELL = ["/", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (e) => {

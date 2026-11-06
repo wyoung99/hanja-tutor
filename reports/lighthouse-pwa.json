@@ -1,5 +1,5 @@
 {
-  "measured_at": "2026-11-05T05:37:37.365Z",
+  "measured_at": "2026-11-06T05:04:14.001Z",
   "environment": "local next start + uvicorn",
   "url": "http://localhost:3310/",
   "lighthouse_version": "11.7.1",

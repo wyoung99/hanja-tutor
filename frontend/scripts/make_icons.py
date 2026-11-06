@@ -13,7 +13,7 @@ def png(n: int, path: pathlib.Path) -> None:
         for x in range(n):
             inside = (x - n / 2) ** 2 + (y - n / 2) ** 2 < (n * 0.42) ** 2
             bar = n * 0.3 < y < n * 0.4 or n * 0.6 < y < n * 0.7
-            row += bytes((255, 255, 255) if inside and bar else (47, 111, 79))
+            row += bytes((255, 255, 255) if inside and bar else (15, 118, 110))
         rows.append(bytes(row))
 
     def ch(t: bytes, d: bytes) -> bytes:
