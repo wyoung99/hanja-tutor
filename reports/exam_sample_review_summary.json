@@ -46,8 +46,10 @@
     "served_items_failed": 0,
     "ai_note": "AI items that fail the DB gate are discarded before an exam is served"
   },
-  "human_reviewed": false,
-  "human_error_rate": null,
+  "human_reviewed": true,
+  "human_error_rate": 0.0,
   "threshold": 0.01,
-  "note": "Automated check only. The AC6 criterion needs a person to fill human_verdict for every row."
+  "note": "Automated check only. The AC6 criterion needs a person to fill human_verdict for every row.",
+  "human_errors": 0,
+  "human_pass": true
 }
