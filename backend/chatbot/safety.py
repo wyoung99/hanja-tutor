@@ -121,13 +121,17 @@ class Gate:
     source: str = "rule"
 
 
-def gate_message(text: str, classifier: Optional[LLMClassifier] = None) -> Gate:
+def rule_gate(text: str) -> Optional[Gate]:
+    """Local, synchronous stage: a rule-based block, else None (the classifier stage decides)."""
     harm = detect_rule_harm(text)
-    if harm:
-        return Gate("block", harm, "rule")
+    return Gate("block", harm, "rule") if harm else None
+
+
+def gate_from_label(text: str, label: Optional[str]) -> Gate:
+    """Second stage for a message the rules did not block. label: the LLM classifier's label, or None when
+    no classifier is configured (rules only)."""
     on_topic = rule_on_topic(text)
-    if classifier is not None:
-        label = classifier.classify(text)
+    if label is not None:
         if label == "PII":
             return Gate("block", "pii", "llm")
         if label == "HARMFUL":
@@ -136,3 +140,9 @@ def gate_message(text: str, classifier: Optional[LLMClassifier] = None) -> Gate:
             return Gate("allow")
         return Gate("allow", source="llm") if label == "ON_TOPIC" else Gate("redirect", "off_topic", "llm")
     return Gate("allow") if on_topic else Gate("redirect", "off_topic", "rule")
+
+
+def gate_message(text: str, classifier: Optional[LLMClassifier] = None) -> Gate:
+    """rule_gate, then the classifier (if any). The streaming path runs the same two stages but overlaps
+    the classifier call with answer generation (chatbot.streaming)."""
+    return rule_gate(text) or gate_from_label(text, classifier.classify(text) if classifier is not None else None)
