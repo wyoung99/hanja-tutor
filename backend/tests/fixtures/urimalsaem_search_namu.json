@@ -1,0 +1,212 @@
+{
+ "channel": {
+  "item": [
+   {
+    "sense": [
+     {
+      "target_code": "368281",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "001",
+      "cat": "",
+      "origin": "",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=368281",
+      "definition": "줄기나 가지가 목질로 된 여러해살이 식물.",
+      "type": "",
+      "syntacticArgument": ""
+     },
+     {
+      "target_code": "371323",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "002",
+      "cat": "",
+      "origin": "",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=371323",
+      "definition": "집을 짓거나 가구, 그릇 따위를 만들 때 재료로 사용하는 재목.",
+      "type": "",
+      "syntacticArgument": ""
+     },
+     {
+      "target_code": "374374",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "003",
+      "cat": "",
+      "origin": "",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=374374",
+      "definition": "땔감이 되는 나무붙이.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "나무"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "490250",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "004",
+      "cat": "",
+      "origin": "",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=490250",
+      "definition": "소 장수들의 은어로, 팔백 냥을 이르던 말.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "나무"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "526884",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "005",
+      "cat": "문학",
+      "origin": "",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=526884",
+      "definition": "이양하가 지은 수필. 안분지족의 현인, 고독의 철인(哲人), 훌륭한 견인주의자(堅忍主義者)로 비유되는 나무의 속성을 통하여 지은이의 인생관을 표현하였다.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "나무"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "1537939",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "009",
+      "cat": "음악",
+      "origin": "",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=1537939",
+      "definition": "유기환 작사, 권진원 작곡의 대중가요. 2006년에 발표된 권진원의 앨범에 수록되어 있다.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "나무"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "1575535",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "010",
+      "cat": "음악",
+      "origin": "",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=1575535",
+      "definition": "방시혁 작사, 방시혁·권태은 작곡의 대중가요. 2009년에 발표된 케이윌의 앨범에 수록되어 있으며, 노을 등이 편곡하여 불렀다.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "나무"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "1634771",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "012",
+      "cat": "음악",
+      "origin": "",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=1634771",
+      "definition": "자이언티·윤후 작사, 김동휘 외 3인 작곡의 대중가요. 2022년에 발표된 윤후의 앨범에 수록되어 있다.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "나무"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "416305",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "007",
+      "cat": "무용",
+      "origin": "鑼舞",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=416305",
+      "definition": "마음을 깨끗이 하고, 도를 닦는 장소를 깨끗이 한다는 뜻으로 추는 불교 의식 무용. 양손에 바라를 쥐고 배꼽을 중심으로 하여 머리 위로 들어 올리거나 좌우로 돌리고, 빠른 동작으로 전진, 후퇴, 회전하며 추는 춤으로 천수바라, 명바라, 사다라니바라, 관욕게바라, 막바라, 내림게바라가 있다.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "나무"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "112036",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "006",
+      "cat": "불교",
+      "origin": "南無",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=112036",
+      "definition": "돌아가 의지한다는 뜻으로, 믿고 받들며 순종함을 이르는 말. 부처나 보살들의 이름 앞에 붙인다.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "나무"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "631553",
+      "pos": "의존 명사",
+      "syntacticAnnotation": "",
+      "sense_no": "008",
+      "cat": "",
+      "origin": "",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=631553",
+      "definition": "‘남짓’의 방언",
+      "type": "방언",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "나무"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "703206",
+      "pos": "",
+      "syntacticAnnotation": "",
+      "sense_no": "001",
+      "cat": "",
+      "origin": "나무看板",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=703206",
+      "definition": "나무로 만들어서 붙인 간판.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "나무 간판"
+   }
+  ],
+  "total": 2792,
+  "num": 10,
+  "link": "https://opendict.korean.go.kr",
+  "start": 1,
+  "description": "우리말샘 개발 지원(Open API) - 사전 어휘 검색 결과",
+  "lastbuilddate": "20261106113541",
+  "title": "우리말샘 개발 지원(Open API) - 사전 어휘 검색"
+ },
+ "_fixture": {
+  "source": "https://opendict.korean.go.kr/api/search (req_type=json, num=10), captured 2026-11-06",
+  "query": "나무",
+  "hanja_field": "channel.item[].sense[].origin (원어)"
+ }
+}

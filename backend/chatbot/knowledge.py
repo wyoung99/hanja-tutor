@@ -48,6 +48,25 @@ class HanjaKnowledge:
                 return g
         return None
 
+    def grade_rank(self, body: str, ch: str) -> int:
+        """Index of ch's easiest grade in the body's grade order (unassigned chars last)."""
+        g = self.grade_of(body, ch)
+        order = self.grade_order.get(body, [])
+        return order.index(g) if g in order else len(order)
+
+    def chars_with_eum(self, body: Optional[str], eum: str) -> List[str]:
+        """The selected body's chars whose DB 음 is eum (per-syllable fallback for Hangul word questions)."""
+        if not body:
+            return []
+        idx = self.__dict__.setdefault("_eum_index", {})
+        if body not in idx:
+            by: Dict[str, List[str]] = {}
+            for c, row in self.hanja.get(body, {}).items():
+                if self.entry(c, body):
+                    by.setdefault(row["eum"].strip(), []).append(c)
+            idx[body] = by
+        return list(idx[body].get(eum, []))
+
     def within_target(self, body: str, grade: str, ch: str) -> bool:
         order = self.grade_order.get(body, [])
         g = self.grade_of(body, ch)

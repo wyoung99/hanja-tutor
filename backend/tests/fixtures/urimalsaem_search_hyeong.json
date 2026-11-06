@@ -1,0 +1,236 @@
+{
+ "channel": {
+  "item": [
+   {
+    "sense": [
+     {
+      "target_code": "28624",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "001",
+      "cat": "",
+      "origin": "兄",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=28624",
+      "definition": "같은 부모에게서 태어난 사이이거나 일가친척 가운데 항렬이 같은 남자들 사이에서 손윗사람을 이르거나 부르는 말. 주로 남자 형제 사이에 많이 쓴다.",
+      "type": "",
+      "syntacticArgument": ""
+     },
+     {
+      "target_code": "60150",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "002",
+      "cat": "",
+      "origin": "兄",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=60150",
+      "definition": "남남끼리의 사이에서 나이가 적은 남자가 나이가 많은 남자를 정답게 이르거나 부르는 말.",
+      "type": "",
+      "syntacticArgument": ""
+     },
+     {
+      "target_code": "596009",
+      "pos": "의존 명사",
+      "syntacticAnnotation": "((성 또는 성명 아래에 쓰여",
+      "sense_no": "003",
+      "cat": "",
+      "origin": "兄",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=596009",
+      "definition": "나이가 비슷한 동료나 아랫사람의 성 뒤에 붙여 상대방을 조금 높여 이르거나 부르는 말. 주로 남자들 사이에서 쓴다.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "형"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "320360",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "005",
+      "cat": "",
+      "origin": "形",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=320360",
+      "definition": "외관으로 나타나는 모양.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "형"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "320361",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "006",
+      "cat": "",
+      "origin": "邢",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=320361",
+      "definition": "우리나라 성(姓)의 하나. 본관은 진주(晉州), 장흥(長興) 등이 현존한다.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "형"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "28668",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "007",
+      "cat": "",
+      "origin": "型",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=28668",
+      "definition": "다른 것들과 구별되는 특징을 이루는 유형이나 형태.",
+      "type": "",
+      "syntacticArgument": ""
+     },
+     {
+      "target_code": "60151",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "008",
+      "cat": "",
+      "origin": "型",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=60151",
+      "definition": "만들려는 물건의 모양대로 속이 비어 있어 거기에 쇠붙이를 녹여 붓도록 되어 있는 틀.",
+      "type": "",
+      "syntacticArgument": ""
+     },
+     {
+      "target_code": "68204",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "009",
+      "cat": "",
+      "origin": "型",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=68204",
+      "definition": "물건을 만들 때 일정한 모양을 잡거나, 뒤틀린 모양을 바로잡는 데 쓰는 틀.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "형"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "320362",
+      "pos": "접사",
+      "syntacticAnnotation": "((일부 명사 뒤에 붙어",
+      "sense_no": "011",
+      "cat": "",
+      "origin": "形",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=320362",
+      "definition": "‘그런 모양’의 뜻을 더하는 접미사.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "-형"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "320363",
+      "pos": "접사",
+      "syntacticAnnotation": "((일부 명사 뒤에 붙어",
+      "sense_no": "012",
+      "cat": "",
+      "origin": "型",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=320363",
+      "definition": "‘그러한 유형’ 또는 ‘그러한 형식’의 뜻을 더하는 접미사.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "-형"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "513330",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "010",
+      "cat": "건설",
+      "origin": "桁",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=513330",
+      "definition": "서까래를 받치기 위하여 기둥 위에 건너지르는 나무.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "형"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "1435823",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "013",
+      "cat": "문학",
+      "origin": "兄",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=1435823",
+      "definition": "유진오가 지은 단편 소설. 1931년에 ≪조선지광≫에 연재되었다.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "형"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "549956",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "004",
+      "cat": "법률",
+      "origin": "刑",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=549956",
+      "definition": "범죄에 대한 법률의 효과로서 국가 따위가 범죄자에게 제재를 가함. 또는 그 제재. 이에는 사형, 징역, 금고, 자격 상실, 자격 정지, 벌금, 구류, 과료, 몰수가 있다.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "형"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "1554489",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "014",
+      "cat": "영상",
+      "origin": "兄",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=1554489",
+      "definition": "이상언(李尙彦) 감독이 만든 영화. 1984년에 개봉하였다.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "형"
+   }
+  ],
+  "total": 16341,
+  "num": 10,
+  "link": "https://opendict.korean.go.kr",
+  "start": 1,
+  "description": "우리말샘 개발 지원(Open API) - 사전 어휘 검색 결과",
+  "lastbuilddate": "20261106113539",
+  "title": "우리말샘 개발 지원(Open API) - 사전 어휘 검색"
+ },
+ "_fixture": {
+  "source": "https://opendict.korean.go.kr/api/search (req_type=json, num=10), captured 2026-11-06",
+  "query": "형",
+  "hanja_field": "channel.item[].sense[].origin (원어)"
+ }
+}

@@ -1,0 +1,188 @@
+{
+ "channel": {
+  "item": [
+   {
+    "sense": [
+     {
+      "target_code": "1435043",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "002",
+      "cat": "",
+      "origin": "學校",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=1435043",
+      "definition": "죄수들의 은어로, ‘교도소’를 이르는 말.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "학교"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "314455",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "001",
+      "cat": "교육",
+      "origin": "學校",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=314455",
+      "definition": "일정한 목적·교과 과정·설비·제도 및 법규에 의하여 계속적으로 학생에게 교육을 실시하는 기관.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "학교"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "1471577",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "003",
+      "cat": "지명",
+      "origin": "鶴橋",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=1471577",
+      "definition": "전라남도 함평군의 남부에 있는 면. 남쪽은 영산강과 맞닿아 있고, 대부분이 낮은 산지로 이루어져 있다. 농업이 발달하였으며, 팽이버섯, 부추, 무화과 등의 특산물이 있다. 국가유산으로 함평 고막천 석교, 함평 구 학다리역 급수탑(咸平舊鶴다리驛給水塔), 함평 마산리 고분군(咸平馬山里古墳群) 등이 있다.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "학교"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "1480988",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "004",
+      "cat": "지명",
+      "origin": "學橋",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=1480988",
+      "definition": "전라남도 나주시 문평면에 있는 이. 문평면의 동북부에 위치해 있으며, 대부분 구릉성 산지이다. 서쪽에 구절봉이 걸쳐 있으며, 서남쪽에 문평천이 흐른다. 동북쪽에 채알봉·민등산이 솟아 있으며, 구렁골이 자리하고 있다. 남쪽에 석교제가 있으며, 이별재골·사들이골 등 계곡이 있다. 남쪽 경계 일부를 따라 무안 광주 고속 도로가 지나며, 801번 지방도가 서쪽을 남북으로 지난다.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "학교"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "1490419",
+      "pos": "명사",
+      "syntacticAnnotation": "",
+      "sense_no": "005",
+      "cat": "지명",
+      "origin": "鶴橋",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=1490419",
+      "definition": "전라남도 신안군 압해읍에 있는 이. 압해도의 중부에 위치해 있다. 북쪽에 홀매산이 걸쳐 있으며, 동쪽에 서해가 접해 있다. 남쪽에 읍사무소·공공 기관·교육 시설 등이 들어서 있으며, 2번·77번 국도가 지난다.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "학교"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "1571244",
+      "pos": "",
+      "syntacticAnnotation": "",
+      "sense_no": "001",
+      "cat": "영상",
+      "origin": "學校가는길",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=1571244",
+      "definition": "이경묵·구중회 감독이 만든 다큐멘터리 영화. 2014년에 개봉하였다.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "학교 가는 길"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "1607778",
+      "pos": "",
+      "syntacticAnnotation": "",
+      "sense_no": "003",
+      "cat": "영상",
+      "origin": "學校가는길",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=1607778",
+      "definition": "이란의 마흐말바프(Makhmalbaf, H.) 감독이 만든 영화. 우리나라에는 2008년에 개봉하였다.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "학교 가는 길"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "1523043",
+      "pos": "",
+      "syntacticAnnotation": "",
+      "sense_no": "001",
+      "cat": "책명",
+      "origin": "學校가는날",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=1523043",
+      "definition": "송언이 지은 동화책. 2011년에 출간되었다.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "학교 가는 날"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "927448",
+      "pos": "",
+      "syntacticAnnotation": "",
+      "sense_no": "001",
+      "cat": "",
+      "origin": "學校怪談",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=927448",
+      "definition": "학교에 얽힌, 근거 없이 떠도는 괴이한 이야기.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "학교 괴담"
+   },
+   {
+    "sense": [
+     {
+      "target_code": "894787",
+      "pos": "",
+      "syntacticAnnotation": "",
+      "sense_no": "001",
+      "cat": "",
+      "origin": "學校企業",
+      "link": "https://opendict.korean.go.kr/dictionary/view?sense_no=894787",
+      "definition": "학교에서 설치하고 운영하는 기업.",
+      "type": "",
+      "syntacticArgument": ""
+     }
+    ],
+    "word": "학교 기업"
+   }
+  ],
+  "total": 9365,
+  "num": 10,
+  "link": "https://opendict.korean.go.kr",
+  "start": 1,
+  "description": "우리말샘 개발 지원(Open API) - 사전 어휘 검색 결과",
+  "lastbuilddate": "20261106113539",
+  "title": "우리말샘 개발 지원(Open API) - 사전 어휘 검색"
+ },
+ "_fixture": {
+  "source": "https://opendict.korean.go.kr/api/search (req_type=json, num=10), captured 2026-11-06",
+  "query": "학교",
+  "hanja_field": "channel.item[].sense[].origin (원어)"
+ }
+}

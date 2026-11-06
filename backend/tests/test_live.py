@@ -102,3 +102,20 @@ def test_urimalsaem_real_lookup(opendict):
         d = opendict.lookup(term)
         assert d and isinstance(d, str), f"no definition for {term}"
     assert opendict.lookup("뷁뷁뷁없는말") is None
+
+
+@pytest.mark.urimalsaem_live
+def test_urimalsaem_real_word_resolves_to_hanja_via_origin(opendict):
+    """The 원어 field is ``channel.item[].sense[].origin``: a bare "학교" resolves to 學校, a native word to none."""
+    from chatbot.wordquery import resolve_word
+
+    entries = opendict.search("학교")
+    assert entries and any(e.origin == "學校" for e in entries), [e.origin for e in entries or []]
+    _, res, looked_up = resolve_word(opendict, "학교", budget=10)
+    assert looked_up and res.hanja == "學校" and res.definition
+    assert resolve_word(opendict, "학교가 뭐야", budget=10)[1].hanja == "學校"
+    _, native, _ = resolve_word(opendict, "나무", budget=10)
+    assert native is not None and native.hanja is None
+    for off_topic in ("심심해", "졸려"):  # single-word OFF_TOPIC cases of the labelled set stay unresolved
+        r = resolve_word(opendict, off_topic, budget=10)[1]
+        assert r is None or not r.is_hanja, (off_topic, r)

@@ -10,7 +10,10 @@ the whole answer (safety classification included) must finish within `timeout` s
 
 Concurrent safety gate (first-token latency): the local checks (consent, safety lock, rule-based
 harm/PII/profanity) run first and synchronously. A message they pass is then classified by the LLM
-classifier WHILE the answer is already being generated. Answer chunks are only buffered until the
+classifier WHILE the answer is already being generated. While the classifier runs, a short Hangul word
+question ("학교") is resolved to its hanja via the 우리말샘 원어 (chatbot.wordquery, cached in-process); a resolved
+word is on-topic by rule (the classifier can still block it as PII/HARMFUL, but not redirect it) and its hanja
+ground the answer prompt. Answer chunks are only buffered until the
 classifier allows the message; nothing of the answer is emitted before that. If the classifier blocks or
 redirects, the answer stream is cancelled and the result is exactly the sequential one (safety event,
 parent notice, 3-strike lock, raw text not stored, no usage charged). Usage is still consumed only after
@@ -27,7 +30,7 @@ from typing import Callable, Iterator, List, Optional
 
 from usage import FeatureLocked, child_notice
 
-from .service import (FAIL_REPLY, LOCK_REPLY, MAX_SENTENCES, _SENT_SPLIT, ChatResult, postprocess)
+from .service import (FAIL_REPLY, LOCK_REPLY, MAX_SENTENCES, _SENT_SPLIT, ChatResult, postprocess, word_on_topic)
 
 FIRST_TOKEN_SLO_SECONDS = 3.0
 STREAM_TIMEOUT_SECONDS = 15.0
@@ -147,20 +150,27 @@ def stream_ask(bot, child_id: str, thread_id: str, message: str, history, timeou
         return
     text = message or ""
     gate = rule_gate(text)  # local + synchronous: rule-based harm / PII / profanity
-    if gate is None and bot.classifier is None:
-        gate = gate_from_label(text, None)
+    pending: Optional[_Classification] = None
+    word = None
+    if gate is None:
+        if bot.classifier is not None:  # start the classifier first: the 우리말샘 word lookup overlaps it
+            pending = _Classification(bot.classifier, text)
+        try:
+            word = bot.resolve_word(text)  # short Hangul word -> hanja (cached); None-safe on failure
+        except Exception:  # noqa: BLE001 - a dictionary failure must not break the chat
+            word = None
+        if pending is None:
+            gate = gate_from_label(text, None, word_on_topic(word))
     if gate is not None and gate.action != "allow":
         yield _done(_gated(bot, child_id, thread_id, gate))
         return
 
-    pending: Optional[_Classification] = None
     prep = None
     answer: Optional[_AnswerStream] = None
-    if gate is None:  # the LLM classifier decides; overlap it with answer generation
-        pending = _Classification(bot.classifier, text)
+    if pending is not None:  # the LLM classifier decides; overlap it with answer generation
         if bot.usage is None or not bot.usage.is_locked(child_id, "chatbot"):
             try:
-                prep = bot._prepare(child_id, message, history or [])
+                prep = bot._prepare(child_id, message, history or [], word)
             except Exception:  # noqa: BLE001 - redone after the gate so a block/redirect still wins
                 prep = None
             if prep is not None and not isinstance(prep, ChatResult):
@@ -171,7 +181,7 @@ def stream_ask(bot, child_id: str, thread_id: str, message: str, history, timeou
             if label is _TIMEOUT:  # no verdict within the budget: show nothing of the answer
                 yield _error()
                 return
-            gate = gate_from_label(text, label)
+            gate = gate_from_label(text, label, word_on_topic(word))
             if gate.action != "allow":
                 if answer is not None:
                     answer.cancel()
@@ -189,7 +199,7 @@ def stream_ask(bot, child_id: str, thread_id: str, message: str, history, timeou
         ok = False
         try:
             if prep is None:
-                prep = bot._prepare(child_id, message, history or [])
+                prep = bot._prepare(child_id, message, history or [], word)
             if isinstance(prep, ChatResult):  # answered from DB/우리말샘 without the LLM
                 ok = prep.counts_as_answer
                 if prep.reply:
