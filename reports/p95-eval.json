@@ -1,5 +1,5 @@
 {
-  "measured_at": "2026-11-06T02:31:23.197552+00:00",
+  "measured_at": "2026-11-06T03:32:47.218911+00:00",
   "environment": "local uvicorn (live_smoke)",
   "llm": {
     "chat": "BedrockProvider",
@@ -23,9 +23,9 @@
   "real_bedrock": true,
   "sample_size": 30,
   "with_first_token": 30,
-  "first_token_p50_s": 0.85,
-  "first_token_p95_s": 1.8,
-  "first_token_max_s": 6.706,
+  "first_token_p50_s": 0.866,
+  "first_token_p95_s": 1.575,
+  "first_token_max_s": 2.132,
   "slo_s": 3.0,
   "errors": 0,
   "pass": true,
@@ -33,232 +33,232 @@
     "chat": {
       "hedge_after_s": 1.5,
       "calls": 30,
-      "hedged": 1,
+      "hedged": 0,
       "hedge_won": 0
     },
     "safety_classifier": {
       "hedge_after_s": 1.5,
       "calls": 30,
-      "hedged": 0,
-      "hedge_won": 0
+      "hedged": 2,
+      "hedge_won": 1
     },
     "total": {
       "calls": 60,
-      "hedged": 1,
-      "hedge_won": 0,
-      "extra_calls": 1
+      "hedged": 2,
+      "hedge_won": 1,
+      "extra_calls": 2
     }
   },
   "samples": [
     {
       "question": "學이 무슨 뜻이에요?",
-      "first_token_s": 0.911,
-      "total_s": 1.37,
+      "first_token_s": 0.912,
+      "total_s": 1.487,
       "status": "answered",
       "events": 5
     },
     {
       "question": "校는 무슨 뜻이에요?",
-      "first_token_s": 6.706,
-      "total_s": 6.716,
+      "first_token_s": 2.132,
+      "total_s": 2.134,
       "status": "answered",
       "events": 5
     },
     {
       "question": "山은 어떤 한자예요?",
-      "first_token_s": 0.703,
-      "total_s": 4.124,
+      "first_token_s": 0.736,
+      "total_s": 1.588,
       "status": "answered",
-      "events": 4
+      "events": 6
     },
     {
       "question": "水가 들어간 낱말 알려 주세요.",
       "first_token_s": 0.834,
-      "total_s": 4.404,
+      "total_s": 8.144,
       "status": "answered",
       "events": 7
     },
     {
       "question": "火는 무슨 뜻이에요?",
-      "first_token_s": 0.857,
-      "total_s": 1.414,
+      "first_token_s": 0.81,
+      "total_s": 1.426,
       "status": "answered",
-      "events": 6
+      "events": 5
     },
     {
       "question": "木으로 만든 낱말이 뭐가 있어요?",
-      "first_token_s": 0.728,
-      "total_s": 10.969,
+      "first_token_s": 1.575,
+      "total_s": 2.287,
       "status": "answered",
-      "events": 6
+      "events": 4
     },
     {
       "question": "金은 무슨 뜻이에요?",
-      "first_token_s": 1.072,
-      "total_s": 1.731,
+      "first_token_s": 1.084,
+      "total_s": 1.77,
       "status": "answered",
       "events": 6
     },
     {
       "question": "土는 어떻게 읽어요?",
-      "first_token_s": 0.676,
-      "total_s": 1.285,
+      "first_token_s": 0.761,
+      "total_s": 1.33,
       "status": "answered",
       "events": 4
     },
     {
       "question": "日과 月은 뭐가 달라요?",
-      "first_token_s": 0.615,
-      "total_s": 1.378,
+      "first_token_s": 0.759,
+      "total_s": 1.45,
       "status": "answered",
       "events": 5
     },
     {
       "question": "人이 들어간 낱말 알려 줘요.",
-      "first_token_s": 0.992,
-      "total_s": 1.666,
+      "first_token_s": 0.841,
+      "total_s": 1.915,
       "status": "answered",
       "events": 7
     },
     {
       "question": "大는 무슨 뜻이에요?",
-      "first_token_s": 0.827,
-      "total_s": 1.468,
-      "status": "answered",
-      "events": 5
-    },
-    {
-      "question": "小는 어떻게 읽어요?",
-      "first_token_s": 1.8,
-      "total_s": 2.229,
+      "first_token_s": 1.006,
+      "total_s": 1.81,
       "status": "answered",
       "events": 4
     },
     {
+      "question": "小는 어떻게 읽어요?",
+      "first_token_s": 1.431,
+      "total_s": 1.947,
+      "status": "answered",
+      "events": 3
+    },
+    {
       "question": "中은 무슨 뜻이에요?",
-      "first_token_s": 0.809,
-      "total_s": 4.5,
+      "first_token_s": 0.853,
+      "total_s": 1.617,
       "status": "answered",
       "events": 4
     },
     {
       "question": "上과 下를 알려 주세요.",
-      "first_token_s": 1.025,
-      "total_s": 1.74,
+      "first_token_s": 0.821,
+      "total_s": 1.631,
       "status": "answered",
       "events": 7
     },
     {
       "question": "東은 무슨 뜻이에요?",
-      "first_token_s": 0.859,
-      "total_s": 1.545,
+      "first_token_s": 0.835,
+      "total_s": 1.707,
       "status": "answered",
       "events": 5
     },
     {
       "question": "西는 어떻게 읽어요?",
-      "first_token_s": 0.836,
-      "total_s": 1.452,
+      "first_token_s": 0.888,
+      "total_s": 1.554,
       "status": "answered",
       "events": 5
     },
     {
       "question": "南은 무슨 뜻이에요?",
-      "first_token_s": 0.746,
-      "total_s": 1.463,
+      "first_token_s": 0.836,
+      "total_s": 1.394,
       "status": "answered",
-      "events": 6
+      "events": 5
     },
     {
       "question": "北은 무슨 뜻이에요?",
-      "first_token_s": 0.929,
-      "total_s": 1.496,
+      "first_token_s": 0.848,
+      "total_s": 1.421,
       "status": "answered",
       "events": 5
     },
     {
       "question": "先生은 무슨 뜻이에요?",
-      "first_token_s": 0.773,
-      "total_s": 1.603,
+      "first_token_s": 0.691,
+      "total_s": 1.612,
       "status": "answered",
       "events": 6
     },
     {
       "question": "學校는 무슨 뜻이에요?",
-      "first_token_s": 1.346,
-      "total_s": 1.424,
+      "first_token_s": 1.284,
+      "total_s": 1.832,
       "status": "answered",
-      "events": 6
+      "events": 5
     },
     {
       "question": "父母는 무슨 뜻이에요?",
-      "first_token_s": 0.763,
-      "total_s": 1.067,
+      "first_token_s": 0.867,
+      "total_s": 1.229,
       "status": "answered",
       "events": 4
     },
     {
       "question": "兄弟는 무슨 뜻이에요?",
-      "first_token_s": 1.644,
-      "total_s": 1.656,
+      "first_token_s": 0.848,
+      "total_s": 1.284,
       "status": "answered",
       "events": 4
     },
     {
       "question": "年은 무슨 뜻이에요?",
-      "first_token_s": 0.792,
-      "total_s": 1.368,
+      "first_token_s": 0.774,
+      "total_s": 1.393,
       "status": "answered",
       "events": 5
     },
     {
       "question": "門은 무슨 뜻이에요?",
-      "first_token_s": 1.353,
-      "total_s": 2.092,
+      "first_token_s": 0.866,
+      "total_s": 1.571,
+      "status": "answered",
+      "events": 6
+    },
+    {
+      "question": "학교",
+      "first_token_s": 1.176,
+      "total_s": 1.958,
+      "status": "answered",
+      "events": 5
+    },
+    {
+      "question": "형제 뜻",
+      "first_token_s": 1.499,
+      "total_s": 2.133,
+      "status": "answered",
+      "events": 5
+    },
+    {
+      "question": "사과가 뭐야",
+      "first_token_s": 1.446,
+      "total_s": 1.912,
       "status": "answered",
       "events": 5
     },
     {
       "question": "學이 무슨 뜻이에요?",
-      "first_token_s": 0.791,
-      "total_s": 1.378,
+      "first_token_s": 0.872,
+      "total_s": 1.472,
       "status": "answered",
       "events": 5
     },
     {
       "question": "校는 무슨 뜻이에요?",
-      "first_token_s": 0.745,
-      "total_s": 1.365,
+      "first_token_s": 0.89,
+      "total_s": 1.373,
       "status": "answered",
       "events": 5
     },
     {
       "question": "山은 어떤 한자예요?",
-      "first_token_s": 0.772,
-      "total_s": 1.448,
+      "first_token_s": 0.618,
+      "total_s": 1.161,
       "status": "answered",
-      "events": 6
-    },
-    {
-      "question": "水가 들어간 낱말 알려 주세요.",
-      "first_token_s": 0.85,
-      "total_s": 5.194,
-      "status": "answered",
-      "events": 7
-    },
-    {
-      "question": "火는 무슨 뜻이에요?",
-      "first_token_s": 1.382,
-      "total_s": 1.969,
-      "status": "answered",
-      "events": 5
-    },
-    {
-      "question": "木으로 만든 낱말이 뭐가 있어요?",
-      "first_token_s": 0.94,
-      "total_s": 2.569,
-      "status": "answered",
-      "events": 7
+      "events": 4
     }
   ]
 }
