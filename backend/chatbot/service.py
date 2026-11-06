@@ -15,7 +15,7 @@ from usage import FeatureLocked, child_notice
 from .dictionary import DictionaryClient
 from .knowledge import HANJA_CLASS, HANJA_RE, HanjaKnowledge
 from .safety import Gate, LLMClassifier, gate_from_label, rule_gate
-from .wordquery import resolve_word, syllable_candidates
+from .wordquery import lookup_many, resolve_word, syllable_candidates
 
 KST = timezone(timedelta(hours=9))
 SAFETY_LOCK_THRESHOLD = 3          # events in one conversation (any type) -> locked for the day
@@ -86,6 +86,7 @@ def postprocess(reply: str, kb: HanjaKnowledge, target: Optional[tuple], diction
     """
     unresolved: List[str] = []
     dict_notes: List[str] = []
+    noted: set = set()
     body = target[0] if target else None
 
     def sub(m: re.Match) -> str:
@@ -97,7 +98,8 @@ def postprocess(reply: str, kb: HanjaKnowledge, target: Optional[tuple], diction
                 d = dictionary.lookup(ch) if dictionary else None
                 if d is None:
                     unresolved.append(ch)
-                else:
+                elif ch not in noted:  # one note per char, however often the answer repeats it
+                    noted.add(ch)
                     dict_notes.append(f"'{ch}'은(는) 우리말샘에서 찾았어요: {d}")
             elif target and not kb.within_target(target[0], target[1], ch):
                 upper = True
@@ -240,6 +242,8 @@ class ChatbotService:
             return ChatResult("error", FAIL_REPLY)
         sources, notes, unresolved = prep["sources"], prep["notes"], prep["unresolved"]
         text, bad, dict_notes = postprocess(raw, self.kb, prep["target"], self.dictionary)
+        # a char already explained by a note from _prepare is not explained twice
+        dict_notes = [n for n in dict_notes if not any(n.startswith(f"'{c}'") for c in prep.get("noted", ()))]
         if bad:
             return ChatResult("unknown", UNKNOWN_REPLY)
         if dict_notes:
@@ -283,11 +287,13 @@ class ChatbotService:
                 return ChatResult("answered", self._syllable_reply(stem, per, target), sources=["db"])
         known = [c for c in q_chars if self.kb.entry(c, body)]
         unresolved: List[str] = []
-        for c in q_chars:
-            if c in known:
-                continue
-            d = self.dictionary.lookup(c) if self.dictionary else None
+        missing = [c for c in q_chars if c not in known]
+        found = lookup_many(self.dictionary, missing) if self.dictionary else {}
+        noted: set = set()
+        for c in missing:
+            d = found.get(c)
             if d:
+                noted.add(c)
                 notes.append(f"'{c}'은(는) 우리 한자 목록에는 없어서 우리말샘에서 찾았어요: {d}")
                 sources.append("urimalsaem")
             else:
@@ -310,7 +316,7 @@ class ChatbotService:
         )
         msgs = list(history) + [{"role": "user", "content": message}]
         return {"system": system, "msgs": msgs, "target": target, "sources": sources,
-                "notes": notes, "unresolved": unresolved}
+                "notes": notes, "unresolved": unresolved, "noted": noted}
 
     def _syllable_reply(self, stem: str, per, target: tuple) -> str:
         parts = []

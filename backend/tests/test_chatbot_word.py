@@ -310,3 +310,15 @@ def test_lookup_overlaps_the_classifier_in_the_stream():
             seen.set()
             break
     assert seen.is_set() and first < 0.55, first
+
+
+@pytest.mark.parametrize("mode", ["ask", "stream"])
+def test_word_char_missing_from_db_gets_one_urimalsaem_note(mode):
+    """사과 -> 沙果: 沙 is not in the 한국어문회 DB -> the existing 우리말샘 note path, once (not per mention)."""
+    d = FakeDictionary({"沙": "모래."}, words={"사과": parse_entries(json.loads(fixture_json("사과")))})
+    b = Bot(dictionary=d, answer="사과는 沙果라고 써요. 沙(모래 사)와 果(실과 과)예요. 沙는 모래라는 뜻이에요.")
+    done, _ = b.ask("사과", mode)
+    assert done["status"] == "answered"
+    assert "학생이 묻는 낱말: 사과(沙果)" in b.answer_prompt
+    assert "果: 훈 실과, 음 과 (상위 급수)" in b.answer_prompt and "沙:" not in b.answer_prompt.split("[DB]")[1]
+    assert done["reply"].count("'沙'은(는)") == 1 and "우리말샘에서 찾았어요: 모래." in done["reply"]

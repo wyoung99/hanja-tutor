@@ -149,6 +149,15 @@ def resolve_word(dictionary, message: str, budget: float = LOOKUP_BUDGET_SECONDS
     return cands, None, looked_up
 
 
+def lookup_many(dictionary, terms: Sequence[str]) -> dict:
+    """dictionary.lookup for several terms at once (hanja missing from the DB): one round trip of latency."""
+    if not terms:
+        return {}
+    if len(terms) == 1:
+        return {terms[0]: dictionary.lookup(terms[0])}
+    return dict(zip(terms, _POOL.map(dictionary.lookup, terms)))
+
+
 def syllable_candidates(kb: HanjaKnowledge, target: Optional[tuple], stem: str) -> Optional[List[Tuple[str, List[str]]]]:
     """[(syllable, [hanja...])] when every syllable has DB hanja with that 음 in the child's body, else None.
 
