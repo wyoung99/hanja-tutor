@@ -25,3 +25,17 @@ venv/
 Thumbs.db
 .vscode/
 .idea/
+
+# Python test cache / build
+*.tsbuildinfo
+next-env.d.ts
+test-results/
+playwright-report/
+
+# Embedded PostgreSQL data (dev)
+backend/.pgdata/
+
+# embedded Postgres test data (fallback dir)
+.pgtest/
+reports/pg-startup-error.log
+reports/pg-stripped-env.log

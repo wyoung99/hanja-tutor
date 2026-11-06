@@ -1,0 +1,22 @@
+# Backend runtime + test dependencies (exact pins; verified on Python 3.14 / Windows).
+fastapi==0.162.0
+uvicorn==0.54.0
+httpx==0.28.1
+pytest==9.2.0
+langchain-core==1.7.0
+langchain-aws==1.9.1
+boto3==1.43.124
+botocore==1.43.124
+langgraph-checkpoint==4.3.1
+langgraph-checkpoint-postgres==3.2.0
+psycopg[binary]==3.3.8
+psycopg-pool==3.3.3
+# Embedded PostgreSQL for dev/tests (pip wheel with bundled binaries; no system install, no admin).
+pixeltable-pgserver==0.7.2
+fasteners==0.20
+psutil==7.2.2
+python-dotenv==1.2.4
+# Web Push (VAPID, aes128gcm) for parent notifications.
+pywebpush==2.5.0
+py-vapid==1.9.6
+http-ece==1.2.1

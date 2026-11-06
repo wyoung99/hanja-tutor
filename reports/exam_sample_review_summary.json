@@ -1,0 +1,55 @@
+{
+  "generated_at": "2026-11-05T08:54:01.053791+00:00",
+  "sheet": "reports\\exam_sample_review.csv",
+  "sample_size": 216,
+  "by_source": {
+    "db": 216,
+    "ai": 0
+  },
+  "by_body": {
+    "daegeom": 108,
+    "korea_eomunhoe": 108
+  },
+  "by_type": {
+    "eum": 48,
+    "hun_eum": 80,
+    "hun_to_hanja": 68,
+    "writing": 11,
+    "busu": 2,
+    "pilsun": 7
+  },
+  "by_official_type": {
+    "baneuieo": 9,
+    "busu": 2,
+    "dokeum": 25,
+    "dongeuieo": 5,
+    "dongeumieuieo": 5,
+    "eum": 22,
+    "hanja_sseugi": 11,
+    "hun_eum": 50,
+    "hun_to_hanja": 36,
+    "hunum": 22,
+    "jangdaneum": 1,
+    "pilsun": 7,
+    "tteutpuri": 8,
+    "wanseong": 9,
+    "yakja": 4
+  },
+  "substituted_items": 66,
+  "automated_db_check": {
+    "failed": 0,
+    "rate": 0.0,
+    "failed_by_source": {
+      "db": 0,
+      "ai": 0
+    },
+    "served_items_failed": 0,
+    "ai_note": "AI items that fail the DB gate are discarded before an exam is served"
+  },
+  "human_reviewed": true,
+  "human_error_rate": 0.0,
+  "threshold": 0.01,
+  "note": "Automated check only. The AC6 criterion needs a person to fill human_verdict for every row.",
+  "human_errors": 0,
+  "human_pass": true
+}

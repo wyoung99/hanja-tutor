@@ -92,8 +92,14 @@
 `8,7,6,준5,5,준4,4,준3,3`(공식 등급 순서)으로 바꾸고, 준급 배정 380행을 `assignments.csv`에 합쳤다.
 - 누적이 공식값과 같아졌다: 5급 250, 4급 600, 3급 1000.
 - verify.py 대조: 18개 급수 모두 공식 목록 대비 누락·초과 0.
-- **남은 일:** 준급 모의고사 형식(문항 수·시간·합격선)은 공식 자료를 확보하지 못해 `exam_formats.json`에 넣지 않았다.
-  출제 형식을 지어내지 않기 위해, 기관 공고를 확인한 뒤 운영자가 추가해야 한다.
+- **모의고사 형식 (2026-11-05):** 준급을 포함한 대한검정회 형식은 사용자가 제공한 기관 안내 표
+  (`official_lists/daegeom/exam_formats_official.json`), 한국어문회 형식은 hanja.re.kr 출제기준·합격기준·시험시간
+  (`official_lists/korea_eomunhoe/exam_formats_official.json`)에서 가져온다. `exam_formats.json`은 이 두 파일에서
+  `backend/mockexam/make_formats.py`로 생성하고 `backend/tests/test_exam_formats_official.py`가 일치를 검사한다.
+  대한검정회 유형별 구성은 공개되지 않아 앱 자체 객관식 구성(`type_mix: app_defined`)이고, 한국어문회의 어휘 데이터가
+  필요한 유형은 가장 가까운 유형으로 대체해 `substitutions`에 기록한다(`type_mix: partial_substitution`).
+  部首는 `eomunhoe-hanja.csv`의 `radical`, 筆順 정답은 `stroke_data/strokes.json`(hanzi-writer, 한국 표준 획순 대조는
+  검증 제외)이며 획 수가 CSV `total_strokes`와 같은 글자만 출제한다.
 
 ### 라이선스/약관
 - 사이트 하단: "Copyright 2003 사단법인 대한민국한자교육연구회·대한검정회. All Right Reserved."
@@ -112,22 +118,51 @@
 | 파일 | 내용 |
 |---|---|
 | `assignments.csv` | body,grade,char. 어문회 1000행, 검정회 1000행(준5·준4·준3 380행 포함). |
-| `hanja.csv` | char,hun,eum,reviewed,char_nfc,hunum_source,hunum_raw. 1170자. 현재 앱 코드(verify.py 등) 호환용으로만 남긴다. 훈·음의 정답 원천은 `hanja_by_body.csv`이며, 앱이 기관별 조회로 바뀌면 이 파일의 훈·음 열은 쓰지 않는다. |
+| `hanja.csv` | char,hun,eum,reviewed,char_nfc,hunum_source,hunum_raw. 1170자. 호환용으로만 남긴다(`verify.validate_entries`, 레거시 테스트). 앱은 이 파일의 훈·음 열을 쓰지 않는다. 훈·음의 정답 원천은 `hanja_by_body.csv`다. |
 | `hanja_by_body.csv` | body,grade,char,hun,eum,reviewed,char_nfc,source_raw. **기관별 훈·음의 정답 원천**(2000행 = 배정 (기관, 글자) 쌍과 1:1). reviewed는 전부 "1"(자료 대조 검수, 아래 참조). |
 
-- **기관별 훈·음 분리 (결정 2026-11-05).** 두 기관 모두에 있는 830자 중 157자는 기관별 대표훈이 다르다(예: 兄 어문회 "형 형" / 검정회 "맏 형"). 대표음이 다른 글자도 3자다(易 역/이, 更 경/갱, 取 원문 누락). 결정에 따라 훈·음은 (기관, 글자) 단위 `hanja_by_body.csv`에 두고, 자녀가 선택한 기관의 값으로 제시·채점한다. 앱 코드 반영은 다음 실행에서 한다(Seed constraints 참조).
+- **기관별 훈·음 분리 (결정 2026-11-05).** 두 기관 모두에 있는 830자 중 157자는 기관별 대표훈이 다르다(예: 兄 어문회 "형 형" / 검정회 "맏 형"). 대표음이 다른 글자도 3자다(易 역/이, 更 경/갱, 取 원문 누락). 결정에 따라 훈·음은 (기관, 글자) 단위 `hanja_by_body.csv`에 두고, 자녀가 선택한 기관의 값으로 제시·채점한다. 앱은 `backend/hanja_db/store.py`(HanjaStore)로 이 파일을 읽는다. 조회는 NFC 기준(`char_nfc`)이다. 오늘의 한자, 복습, 모의고사 출제·채점, 챗봇 훈·음 교정, 리포트가 모두 자녀가 선택한 기관의 값을 쓴다. 훈·음이 빈 행은 모의고사에 내지 않는다(검수 후 빈 행 없음).
 - **훈·음 검수 완료 (2026-11-05, 자료 대조).** `backend/hanja_db/cross_verify.py --apply`로 2000행 모두 `reviewed=1`. 대한검정회 1000행은 사용자가 넣은 「신출한자 훈음표」 PDF 9개(`official_lists/daegeom/*급 신출한자 훈음표*.pdf`)의 표제훈음과 1000/1000 일치. 한국어문회 1000행은 사용자가 넣은 `official_lists/korea_eomunhoe/eomunhoe-hanja.csv`와 999/1000 일치, 占은 CSV 행이 깨져 있어('점령할점') 원문 판독으로 일치 확인. 빈칸이던 대한검정회 준3급 取는 PDF 값 '가질 취', 暴는 '사나울 포'(PDF: '사나울(폭)포', 폭은 이음)로 채웠다. 행별 결과는 `hanja_db/review_report.csv`. 참고: 검정회 PDF는 앞서 쓴 HWP 훈음표와 같은 문서의 다른 형식이라 추출 오류를 잡는 대조이고, 어문회 CSV는 출처가 다른 별도 자료다.
 
 ---
 
-## 4. 획순 데이터 (`data/stroke_data/`): 수집하지 않음
+## 4. 획순 데이터 (`data/stroke_data/`)
 
-> **결정(2026-11-05): 한국 기준 획순 대조는 검증에서 제외한다.** 앱은 hanzi-writer(Make Me a Hanzi) 획순 데이터를 그대로 쓰고,
-> 한국 교육용 획순과 다른 글자는 나중에 글자별 제외 플래그로 채점에서 뺄 수 있게만 둔다. 아래 계획은 참고용으로 남긴다.
+> **결정(2026-11-05): 한국 기준 획순 대조는 검증에서 제외한다**(Seed AC7 `verify_exemption_reason`).
+> 앱은 hanzi-writer(Make Me a Hanzi) 획순 데이터를 그대로 쓴다. 한국 교육용 획순과 다른 글자는 나중에
+> 글자별 `exclude_from_grading` 플래그로 채점과 쓰기 문항에서 뺄 수 있게 자리만 두었다(현재 모두 `false`).
 
-AC7은 "한국 기준 참조 데이터와 100% 일치"를 요구한다. 그런데 **기계 판독 가능하고 재배포가 가능한 한국 표준 필순 데이터를 찾지 못했다.** 중국·일본 데이터를 "Korean reference"라는 이름으로 넣지 않기 위해 `strokes.json`과 `korean_reference.json`은 만들지 않았다.
+### 출처
+| 항목 | 값 |
+|---|---|
+| 패키지 | npm `hanzi-writer-data` **2.0.1** (정확한 버전 고정, 레지스트리 수정일 2022-05-04) |
+| 받은 방법 | 빈 임시 디렉터리에서 `npm pack hanzi-writer-data@2.0.1 --ignore-scripts` (조회일 2026-11-05). 압축은 풀지 않고 `tarfile`로 `package/<글자>.json`의 `medians` 숫자 배열만 읽음. 패키지 코드는 실행하지 않음 |
+| tarball SHA-256 | 72baf3d82b114e60d6e40ea05f24d2262a05cd39d544e2f322ba2fceb7beff15 |
+| npm integrity | sha512-nbQwM+MaryGoq7pBMIZLCd3lFq03nXuJuwku1+6UbjL58uU+9OULVcMkoNvNuJSoIV7f1bbPRfD4D/LQa5S7qg== |
+| 원천 | Make Me a Hanzi (https://github.com/skishore/makemeahanzi), Arphic Technology 글꼴에서 추출 |
+| 생성 스크립트 | `python -I backend/tracing/build_stroke_data.py <tgz>` → `strokes.json` (재현 가능) |
 
-필요한 스키마는 `backend/tracing/strokes.py` 기준이다. `{ "<char>": { "strokes": [[[x,y],...], ...], "reviewed": bool } }` 형태이고, hanzi-writer 1000×1000 좌표계를 쓰며 각 획은 중심선(median) 폴리라인이다. `korean_reference.json`은 reviewed 기본값이 true이고, 비교 허용오차는 eps=0(완전 일치)이다.
+### 라이선스
+- hanzi-writer-data의 획 데이터는 **Arphic Public License**를 따른다. 원문은 `data/stroke_data/ARPHICPL.TXT`(패키지 동봉 파일 그대로)다.
+  상위 프로젝트 Make Me a Hanzi는 획 그래픽(`graphics.txt`)을 Arphic Public License로, 사전 데이터(`dictionary.txt`)를 LGPL로 배포한다.
+  이 앱은 획 중심선(median)만 쓰므로 Arphic Public License 계열이다.
+- APL은 수정본을 같은 라이선스로 배포하고 라이선스 사본을 함께 줄 것을 요구한다. `strokes.json`은 좌표를 변환한 파생물이다.
+- **로컬 시험용으로만 사용한다.** 외부 배포나 서비스 출시 전에 라이선스 고지 방식을 다시 확인한다.
+
+### 형식과 좌표
+- `strokes.json` = `{"_source": {...}, "chars": {"<NFC 글자>": {"strokes": [[[x,y],...],...], "exclude_from_grading": false}}}`.
+- 좌표는 앱의 0..1000 화면 좌표(y는 아래로 증가)다. 원본은 1024 단위이고 y가 위로 증가하므로 `x' = x·1000/1024`, `y' = (900 − y)·1000/1024`로 바꿨다(hanzi-writer의 표시 변환과 같다).
+- 키는 NFC 통합 한자다. 공식 목록의 호환 코드(金 U+F90A 등)는 NFC로 바꿔서 찾는다.
+
+### 범위
+- 배정 한자(두 기관 합집합, NFC) 1166자 중 **1146자에 획 데이터가 있다.**
+- **획 데이터가 없는 20자**는 따라쓰기와 모의고사 쓰기 문항에서 빠진다. 대부분 한국에서 쓰는 이체자 코드포인트라서 hanzi-writer(중국 자형)에 없다.
+  敎(U+654E) 飮(U+98EE) 窓(U+7A93) 淸(U+6DF8) 擧(U+64E7) 氷(U+6C37) 査(U+67FB) 硏(U+784F) 爲(U+7232) 絶(U+7D76)
+  眞(U+771E) 鄕(U+9115) 鑛(U+945B) 姉(U+59C9) 鬪(U+9B2A) 旣(U+65E3) 郞(U+90DE) 晩(U+6669) 顔(U+9854) 卽(U+537D)
+  (`strokes.json`의 `_source.missing`에도 같은 목록이 있다.) 다른 코드포인트(예: 教·飲)의 데이터로 대체하지 않았다. 자형이 다르기 때문이다.
+
+### 참고: 한국 기준 참조 데이터 조사 (검증 제외, 기록용)
+아래는 결정 이전에 조사한 내용이다. 기계 판독 가능하고 재배포 가능한 한국 표준 필순 데이터는 찾지 못했다. 그래서 `korean_reference.json`은 만들지 않는다.
 
 | 후보 | 기준 | 형식 | 라이선스 | 판단 |
 |---|---|---|---|---|
@@ -139,7 +174,7 @@ AC7은 "한국 기준 참조 데이터와 100% 일치"를 요구한다. 그런�
 | hanzi-writer-data-youyin | 혼합(makemeahanzi+jp+animCJK) | hanzi-writer JSON | MIT 표기(상위 라이선스 확인 필요) | 한국 기준 아님 |
 | Wikimedia Commons Stroke Order Project | PRC/ROC/일본 3기준 | 그림(GIF/SVG) | CC 계열 | 한국 기준 없음 |
 
-### 권장 계획
+### 권장 계획 (결정 이전 기록)
 1. **기준 결정(사용자).** AC7의 "한국 기준"을 무엇으로 볼지 정한다. 국가 표준이 없으므로 실질적인 선택지는 시행 기관(한국어문회·대한검정회)이 펴낸 필순이다. 두 기관의 필순이 다를 가능성도 함께 확인한다.
 2. **기반 데이터.** `strokes.json`은 Make Me a Hanzi(hanzi-writer 형식, 좌표계 일치)로 생성하고 `reviewed=false`로 둔다. 라이선스 고지(LGPL/Arphic)도 포함한다.
 3. **한국 참조 구축.** 선택한 기관 교재의 필순(획 순서·방향·획수)을 사람이 글자별로 확인한다. 기반 데이터와 다르면 획 순서를 재배열하거나 분할·병합해 교정하고, 교정본을 `korean_reference.json`으로 만든다. 1차 범위는 쓰기 대상만으로 잡는다. 어문회는 쓰기 배정이 6II급 50자부터 4급 500자까지이고, 검정회는 쓰기 범위를 별도로 확인해야 한다.

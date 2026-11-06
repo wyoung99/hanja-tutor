@@ -1,0 +1,34 @@
+{
+  "name": "hanja-tutor-web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "test": "vitest run",
+    "test:unit": "vitest run && cd .. && python -m pytest backend/tests -q -p no:cacheprovider -rfEs",
+    "test:smoke": "cd .. && python -m pytest backend/tests -m live_smoke -q -p no:cacheprovider -rfEs",
+    "test:all": "npm run test:unit && npm run test:smoke",
+    "test:e2e": "playwright test",
+    "e2e": "playwright test",
+    "test:live": "cd .. && python -m pytest backend/tests/test_live.py -m \"bedrock_live or urimalsaem_live\" -p no:cacheprovider -rs",
+    "measure:p95": "cd .. && python backend/scripts/measure_p95.py --n 20",
+    "lighthouse": "node scripts/lighthouse-pwa.mjs",
+    "test:env": "cd .. && python -m pytest backend/tests/test_pg_startup.py -m env_robustness -q -p no:cacheprovider -rfEs"
+  },
+  "dependencies": {
+    "next": "^15.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "chrome-launcher": "1.1.2",
+    "lighthouse": "11.7.1",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
