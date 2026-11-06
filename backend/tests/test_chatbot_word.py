@@ -17,7 +17,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from accounts.service import AccountService, FakeIdentityVerifier  # noqa: E402
+from accounts.service import AccountService  # noqa: E402
 from chatbot.dictionary import DictEntry, FakeDictionary, UrimalsaemClient, parse_entries  # noqa: E402
 from chatbot.knowledge import HanjaKnowledge  # noqa: E402
 from chatbot.service import BLOCK_REPLY, ChatbotService, RecordingNotifier  # noqa: E402
@@ -68,9 +68,8 @@ class Bot:
     def __init__(self, label="OFF_TOPIC", body=EOMUN, grade="8", dictionary="fixture", answer=ANSWER,
                  classifier_delay=0.0, limits=None):
         self.label, self.systems = label, []
-        ver = FakeIdentityVerifier()
-        self.acc = AccountService(ver)
-        p = self.acc.signup_parent(ver.complete_verification("ci"), "p@x.kr", True, True, True)
+        self.acc = AccountService()
+        p = self.acc.signup_parent("p-word1", "parent-pw-1", "p@x.kr", True, True, True)
         self.child = self.acc.create_child(p.id, "별이", "1234", ai_consent=True)
         self.child.extra["target"] = (body, grade)
         self.dictionary = fixture_client() if dictionary == "fixture" else dictionary
