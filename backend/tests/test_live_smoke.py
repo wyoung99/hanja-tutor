@@ -103,7 +103,7 @@ def test_urimalsaem_lookup(live_env):
 
 
 def test_p95_first_token_under_3s_on_local_uvicorn(live_env):
-    """AC9: 10 questions to POST /api/children/{id}/chat/stream on a local uvicorn with real Bedrock."""
+    """AC9: 30 questions (1 warm-up not counted) to POST /api/children/{id}/chat/stream on a local uvicorn with real Bedrock."""
     sys.path.insert(0, str(ROOT / "backend" / "scripts"))
     import httpx
     import measure_p95 as m
