@@ -14,7 +14,8 @@ from usage import FeatureLocked, child_notice
 
 from .dictionary import DictionaryClient
 from .knowledge import HANJA_CLASS, HANJA_RE, HanjaKnowledge
-from .safety import Gate, LLMClassifier, gate_message
+from .safety import Gate, LLMClassifier, gate_from_label, rule_gate
+from .wordquery import resolve_word, syllable_candidates
 
 KST = timezone(timedelta(hours=9))
 SAFETY_LOCK_THRESHOLD = 3          # events in one conversation (any type) -> locked for the day
@@ -30,6 +31,11 @@ _TOKEN_RE = re.compile(
     "(?P<w>[" + HANJA_CLASS + r"]+)(?:\s*[\(\[（](?P<a>[가-힣 ]+?)[\)\]）])?"
 )
 _SENT_SPLIT = re.compile(r"(?<=[.!?。！？])\s+")
+
+
+def word_on_topic(word) -> bool:
+    """A short Hangul word question resolved to a hanja word counts as on-topic for the gate."""
+    return bool(word and word[1] is not None and word[1].is_hanja)
 
 
 class Notifier(Protocol):
@@ -158,19 +164,25 @@ class ChatbotService:
         if self.is_locked(child_id):
             return ChatResult("locked", LOCK_REPLY, locked_today=True)
 
-        gate = gate_message(message or "", self.classifier)
+        text = message or ""
+        word = None
+        gate = rule_gate(text)
+        if gate is None:
+            word = self.resolve_word(text)
+            label = self.classifier.classify(text) if self.classifier is not None else None
+            gate = gate_from_label(text, label, word_on_topic=word_on_topic(word))
         if gate.action == "block":
             return self._handle_block(child_id, thread_id, gate)
         if gate.action == "redirect":
             return ChatResult("redirected", self._redirect_reply(child_id), "off_topic")
         if self.usage is None:
-            return self._answer(child_id, message, history or [])
+            return self._answer(child_id, message, history or [], word)
         try:
             res = self.usage.consume(child_id, "chatbot")  # atomic; no concurrent overshoot
         except FeatureLocked:
             return ChatResult("locked", child_notice("chatbot"), locked_today=True)
         try:
-            result = self._answer(child_id, message, history or [])
+            result = self._answer(child_id, message, history or [], word)
         except BaseException:
             self.usage.release(res)
             raise
@@ -203,8 +215,15 @@ class ChatbotService:
         return [e for e in self.events if e.child_id == child_id]
 
     # ---- answering ----------------------------------------------------------
-    def _answer(self, child_id: str, message: str, history: List[dict]) -> ChatResult:
-        prep = self._prepare(child_id, message, history)
+    def resolve_word(self, message: str):
+        """Short Hangul word question -> (candidates, WordResolution | None, looked_up) via 우리말샘 원어."""
+        try:
+            return resolve_word(self.dictionary, message)
+        except Exception:  # noqa: BLE001 - a dictionary problem never breaks the chat (treated as no hit)
+            return [], None, False
+
+    def _answer(self, child_id: str, message: str, history: List[dict], word=None) -> ChatResult:
+        prep = self._prepare(child_id, message, history, word)
         if isinstance(prep, ChatResult):
             return prep
         return self._finish(prep, self._llm_text(prep))
@@ -230,14 +249,39 @@ class ChatbotService:
         sources = ["db"] + [s for s in dict.fromkeys(sources)]
         return ChatResult("answered", " ".join([text] + dict_notes + notes), sources=sources)
 
-    def _prepare(self, child_id: str, message: str, history: List[dict]):
-        """Either a final ChatResult (no LLM needed) or a dict describing the LLM call."""
+    def _prepare(self, child_id: str, message: str, history: List[dict], word=None):
+        """Either a final ChatResult (no LLM needed) or a dict describing the LLM call.
+
+        word: resolve_word(message) when the caller already has it (else looked up here, cached)."""
         target = self._target(child_id)
         body = target[0] if target else None
+        cands, res, _ = word if word is not None else self.resolve_word(message)
         q_chars = list(dict.fromkeys(HANJA_RE.findall(message)))
-        known = [c for c in q_chars if self.kb.entry(c, body)]
         sources: List[str] = []
         notes: List[str] = []
+        word_lines: List[str] = []
+        if res is not None and res.is_hanja:
+            alts = [a for a in res.alternatives if all(self.kb.entry(c, body) for c in a)]
+            q_chars = list(dict.fromkeys(q_chars + list(res.hanja) + [c for a in alts for c in a]))
+            line = f"학생이 묻는 낱말: {res.word}({res.hanja})"
+            if alts:
+                line += " / 같은 소리의 다른 한자어: " + ", ".join(alts)
+            word_lines.append(line)
+            if res.definition:
+                word_lines.append(f"우리말샘 뜻풀이: {res.definition}")
+            word_lines.append(f"'{res.word}'이(가) 어떤 한자로 이루어졌는지 한 글자씩 DB 훈·음으로 풀어 낱말 뜻을 쉽게 설명한다.")
+            sources.append("urimalsaem")
+        elif res is not None:
+            word_lines.append(f"학생이 묻는 낱말: {res.word} (우리말샘에 한자 원어가 없는 우리말"
+                              + (f", 뜻풀이: {res.definition}" if res.definition else "") + ")")
+            word_lines.append("이 낱말에 한자를 지어 붙이지 말고, 한자가 없는 우리말이라고 쉽게 설명한다.")
+            sources.append("urimalsaem")
+        elif cands and not q_chars:  # no dictionary hit / no API key: list per-syllable DB hanja, never invent a word
+            stem = cands[1] if len(cands) > 1 and len(cands[1]) >= 2 else cands[0]
+            per = syllable_candidates(self.kb, target, stem)
+            if per:
+                return ChatResult("answered", self._syllable_reply(stem, per, target), sources=["db"])
+        known = [c for c in q_chars if self.kb.entry(c, body)]
         unresolved: List[str] = []
         for c in q_chars:
             if c in known:
@@ -261,11 +305,25 @@ class ChatbotService:
         system = (
             "너는 초등학생에게 한자와 어휘를 알려 주는 선생님이다. 한자·어휘·교과 어휘 이야기만 한다. "
             "초등학생이 이해할 쉬운 말로 3~5문장으로 답한다. 한자의 훈·음은 아래 DB 값만 쓰고 "
-            "'漢(한나라 한)' 형식으로 쓴다. 목표 급수 안의 한자를 우선 쓴다.\n[DB]\n" + "\n".join(ctx)
+            "'漢(한나라 한)' 형식으로 쓴다. 목표 급수 안의 한자를 우선 쓴다.\n"
+            + "".join(line + "\n" for line in word_lines) + "[DB]\n" + "\n".join(ctx)
         )
         msgs = list(history) + [{"role": "user", "content": message}]
         return {"system": system, "msgs": msgs, "target": target, "sources": sources,
                 "notes": notes, "unresolved": unresolved}
+
+    def _syllable_reply(self, stem: str, per, target: tuple) -> str:
+        parts = []
+        for syl, chars in per:
+            shown = []
+            for c in chars:
+                e = self.kb.entry(c, target[0])
+                mark = "" if self.kb.within_target(target[0], target[1], c) else UPPER_MARK
+                shown.append(f"{c}({e['hun'].strip()} {e['eum'].strip()}){mark}")
+            parts.append(f"{syl} - " + ", ".join(shown))
+        return (f"'{stem}'을(를) 어떤 한자로 쓰는지는 사전에서 확인하지 못했어요. "
+                f"글자마다 이런 한자가 있어요: {' / '.join(parts)}. "
+                "어떤 낱말인지 한자로 써서 다시 물어봐 주세요.")
 
     # ---- streaming ------------------------------------------------------------
     def ask_stream(self, child_id: str, thread_id: str, message: str, history: Optional[List[dict]] = None,
