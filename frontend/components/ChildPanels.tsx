@@ -37,7 +37,7 @@ export function ScreenGuard({ child, children }: { child: Child; children: React
 
 function LockScreen({ child, reason, onUnlocked }: { child: Child; reason: string | null; onUnlocked: () => void }) {
   const [req, setReq] = useState<{ id: string; status: string } | null>(null);
-  const [pin, setPin] = useState("");
+  const [password, setPassword] = useState("");
   const [minutes, setMinutes] = useState(15);
   const [msg, setMsg] = useState("");
   useEffect(() => {
@@ -58,11 +58,13 @@ function LockScreen({ child, reason, onUnlocked }: { child: Child; reason: strin
   }
   async function grant() {
     try {
-      await api(`/children/${child.id}/screentime/extra`, { body: { parent_pin: pin, minutes } });
-      setPin("");
+      await api(`/children/${child.id}/screentime/extra`, { body: { parent_password: password, minutes } });
+      setPassword("");
       onUnlocked();
-    } catch {
-      setMsg("부모님 PIN이 달라요.");
+    } catch (e) {
+      setMsg(e instanceof ApiError && e.detail?.code === "parent_password_locked"
+        ? "비밀번호를 여러 번 틀렸어요. 부모님이 부모 계정으로 로그인하면 다시 쓸 수 있어요."
+        : "부모님 비밀번호가 달라요.");
     }
   }
   return (
@@ -75,8 +77,8 @@ function LockScreen({ child, reason, onUnlocked }: { child: Child; reason: strin
       </label>
       <button data-testid="ask-extension" disabled={req?.status === "pending"} onClick={ask}>부모님께 시간 더 달라고 하기</button>
       <h3>부모님이 옆에 계신가요?</h3>
-      <input data-testid="parent-pin-extra" type="password" inputMode="numeric" placeholder="부모님 PIN" value={pin} onChange={(e) => setPin(e.target.value)} />
-      <button className="secondary" data-testid="grant-extra" onClick={grant}>부모님 PIN으로 시간 추가</button>
+      <input data-testid="parent-password-extra" type="password" autoComplete="off" placeholder="부모님 계정 비밀번호" value={password} onChange={(e) => setPassword(e.target.value)} />
+      <button className="secondary" data-testid="grant-extra" onClick={grant}>부모님 비밀번호로 시간 추가</button>
       <button className="secondary" onClick={onUnlocked}>다시 확인</button>
       {msg && <p data-testid="lock-msg">{msg}</p>}
     </section>
