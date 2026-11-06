@@ -6,6 +6,8 @@ Legacy single-model config {"provider": "bedrock", "model_id": "...", "region": 
 """
 from __future__ import annotations
 
+import threading
+import time
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, Iterator, List
 
@@ -80,25 +82,57 @@ BedrockProvider.stream = _bedrock_stream  # type: ignore[method-assign]
 
 
 class FakeProvider(LLMProvider):
-    """Deterministic provider for tests/dev: handler(system, messages) -> text."""
+    """Deterministic provider for tests/dev: handler(system, messages) -> text.
 
-    def __init__(self, handler: Callable[[str, List[Dict[str, str]]], str] | None = None):
+    Latency injection (for hedging / concurrency tests): ``first_delay`` is the delay before the first chunk
+    (stream) or before returning (complete). It is a float, a list indexed by call number (0-based; the last
+    value repeats) or a callable(call_index, system) -> float. ``chunk_delay`` sleeps between later chunks.
+    ``cancelled`` lists the call indexes whose stream was closed before it finished.
+    """
+
+    def __init__(self, handler: Callable[[str, List[Dict[str, str]]], str] | None = None,
+                 first_delay: Any = 0.0, chunk_delay: float = 0.0):
         self.handler = handler or (lambda s, m: "")
         self.calls: List[tuple] = []
+        self.first_delay, self.chunk_delay = first_delay, chunk_delay
+        self.cancelled: List[int] = []
+        self._n = 0
+        self._lock = threading.Lock()
+
+    def _begin(self, system: str, messages: List[Dict[str, str]]) -> tuple:
+        with self._lock:
+            idx = self._n
+            self._n += 1
+            self.calls.append((system, messages))
+        d = self.first_delay
+        if callable(d):
+            d = d(idx, system)
+        elif isinstance(d, (list, tuple)):
+            d = d[min(idx, len(d) - 1)] if d else 0.0
+        return idx, float(d or 0.0)
 
     def complete(self, system: str, messages: List[Dict[str, str]]) -> str:
-        self.calls.append((system, messages))
+        idx, delay = self._begin(system, messages)
+        if delay:
+            time.sleep(delay)
         return self.handler(system, messages)
 
     def stream(self, system: str, messages: List[Dict[str, str]]) -> Iterator[str]:
         """Streams the handler's reply in small pieces; handler may also return a list/iterator of chunks."""
-        self.calls.append((system, messages))
-        out = self.handler(system, messages)
-        if isinstance(out, str):
-            for i in range(0, len(out), 8):
-                yield out[i:i + 8]
-        else:
-            yield from out
+        idx, delay = self._begin(system, messages)
+        try:
+            if delay:
+                time.sleep(delay)
+            out = self.handler(system, messages)
+            pieces = (out[i:i + 8] for i in range(0, len(out), 8)) if isinstance(out, str) else out
+            for n, piece in enumerate(pieces):
+                if n and self.chunk_delay:
+                    time.sleep(self.chunk_delay)
+                yield piece
+        except GeneratorExit:  # consumer closed the stream early (cancelled)
+            with self._lock:
+                self.cancelled.append(idx)
+            raise
 
 
 _REGISTRY: Dict[str, Callable[..., LLMProvider]] = {"bedrock": BedrockProvider, "fake": FakeProvider}
@@ -127,6 +161,10 @@ TASK_TIERS: Dict[str, str] = {
     "safety_classifier": FAST,          # one-word label (HARMFUL/PII/ON_TOPIC/OFF_TOPIC)
     "question_generation": REASONING,   # mock-exam items: distractors + explanations as strict JSON
 }
+
+# First-chunk latency of these tasks is user-visible (chatbot first token), so they are hedged
+# (see llm.hedge). Sonnet question generation is never hedged.
+HEDGED_TASKS = frozenset({"chat", "safety_classifier"})
 
 # Bedrock inference-profile IDs per region. ap-northeast-2 offers only `global.*` profiles;
 # us-* regions use the `us.*` profiles so requests stay inside US regions.
@@ -171,6 +209,21 @@ class LLMRouter:
     def for_task(self, task: str) -> LLMProvider:
         return self.providers[self.tier_of(task)]
 
+    def hedged(self, task: str, hedge_after_s: float) -> LLMProvider:
+        """for_task() wrapped in a HedgedProvider for latency-critical tasks (HEDGED_TASKS); other tasks
+        (e.g. Sonnet question generation) get the plain provider. One wrapper (and stats) per task."""
+        if task not in HEDGED_TASKS:
+            return self.for_task(task)
+        cache = self.__dict__.setdefault("_hedged", {})
+        if task not in cache:
+            cache[task] = HedgedProvider(self.for_task(task), hedge_after_s, name=task)
+        return cache[task]
+
+    def hedge_stats(self) -> Dict[str, Any]:
+        """{task: {"hedge_after_s", "calls", "hedged", "hedge_won"}} for the hedged wrappers handed out."""
+        cache = self.__dict__.get("_hedged", {})
+        return {t: {"hedge_after_s": p.hedge_after_s, **p.stats.snapshot()} for t, p in cache.items()}
+
 
 def build_llm_router(config: Dict[str, Any]) -> LLMRouter:
     """Build a tiered router from LLM_CONFIG.
@@ -194,3 +247,7 @@ def build_llm_router(config: Dict[str, Any]) -> LLMRouter:
             return LLMRouter({FAST: single, REASONING: single}, task_tiers)
     providers = {tier: build_provider(tc) for tier, tc in tiers_cfg.items()}
     return LLMRouter(providers, task_tiers)
+
+
+from .hedge import (DEFAULT_HEDGE_AFTER_S, HEDGE_ENV, HedgedProvider, HedgeStats,  # noqa: E402,F401
+                    hedge_after_seconds)

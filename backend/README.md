@@ -24,6 +24,7 @@ and empty values count as unset.
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (+ `AWS_SESSION_TOKEN` only for temporary keys) | Bedrock credentials, read by the default boto3 chain |
 | `AWS_REGION` | Bedrock region (default `ap-northeast-2`, `global.*` profiles) |
 | `LLM_CONFIG` | `{"provider":"bedrock","region":"ap-northeast-2"}` -> Haiku 4.5 (chat, safety) / Sonnet 4.6 (question generation). Empty -> fake LLM |
+| `LLM_HEDGE_AFTER_S` | hedged requests for the chatbot answer stream and the safety classifier (Haiku only, never Sonnet question generation): if the first chunk has not arrived after this many seconds, ONE duplicate request is sent and the faster one wins. Default `1.5`, `0` disables. Counts (calls / hedged / hedge_won) in `GET /api/health` -> `llm.hedge` |
 | `OPENDICT_API_KEY` | 우리말샘 open API key (fallback for hanja missing from the DB). Empty -> "잘 모르겠어요" |
 | `DATABASE_URL` / `PG_EMBEDDED_DIR` | PostgreSQL as the system of record (see below). `PG_EMBEDDED_DIR=.pgdata` starts the bundled pip PostgreSQL (pixeltable-pgserver, repo-local data dir); neither -> everything in memory |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Web Push to parents' browsers (base64url P-256 public point / raw private key; subject `mailto:` or `https://`). Generate with `cd backend && python -m notifications.webpush keygen`. Empty -> push disabled, in-app inbox + email fallback only |

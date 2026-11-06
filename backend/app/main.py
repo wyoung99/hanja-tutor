@@ -12,6 +12,8 @@ known official format would get learning features only (mock-exam start blocked,
 Configuration (``backend/.env`` + process env, see ``app/settings.py`` and ``.env.example``):
 * ``LLM_CONFIG`` JSON -> ``llm.build_llm_router`` (Bedrock Haiku/Sonnet by tier); empty -> fake LLM.
   Bedrock credentials come only from the default boto3 chain; region from LLM_CONFIG or AWS_REGION.
+* ``LLM_HEDGE_AFTER_S`` (default 1.5, 0 = off) -> hedged chatbot answer / safety-classifier calls: one
+  duplicate request if the first chunk is that late; counts in ``/api/health`` -> ``llm.hedge``.
 * ``OPENDICT_API_KEY`` -> 우리말샘 fallback dictionary; empty -> unknown hanja answer "잘 모르겠어요".
 * ``DATABASE_URL`` or ``PG_EMBEDDED_DIR`` -> PostgreSQL is the system of record: LangGraph PostgresSaver
   checkpoints + ``chat_threads``, atomic ``usage_counters``, and one table per entity for accounts, profiles,
@@ -59,7 +61,7 @@ from app.persistence import PlanState, apply_plan_state, rebuild_indexes, regist
 from notifications import InvalidSubscription, NotificationCenter, VapidConfig, WebPushSender  # noqa: E402
 from hanja_db.store import HanjaStore, load_eomunhoe_attributes, nfc  # noqa: E402
 from lifecycle import LifecycleService, PaymentRecord, PaymentStore  # noqa: E402
-from llm import FakeProvider, LLMRouter, build_llm_router  # noqa: E402
+from llm import FakeProvider, LLMRouter, build_llm_router, hedge_after_seconds  # noqa: E402
 from mockexam import formats as F  # noqa: E402
 from mockexam import questions as Q  # noqa: E402
 from mockexam.service import ExamError, FormatPending, MockExamService, cumulative_pool  # noqa: E402
@@ -299,9 +301,10 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
     refunds = RefundService(bill, usage, clock, notifier=push)
     llm_router = _build_llm(env)
     dictionary = UrimalsaemClient(env["OPENDICT_API_KEY"]) if env.get("OPENDICT_API_KEY") else None
-    bot = ChatbotService(acc, kb, llm_router.for_task("chat"), dictionary, push, clock,
+    hedge_s = hedge_after_seconds(env)  # LLM_HEDGE_AFTER_S (default 1.5s, 0 = off): chat + classifier only
+    bot = ChatbotService(acc, kb, llm_router.hedged("chat", hedge_s), dictionary, push, clock,
                          use_llm_classifier=bool(env.get("LLM_CONFIG")), usage=usage,
-                         classifier_llm=llm_router.for_task("safety_classifier"))
+                         classifier_llm=llm_router.hedged("safety_classifier", hedge_s))
 
     if db_url:  # LangGraph PostgresSaver + chat_threads metadata table
         conv = ConversationService(bot, acc, PostgresCheckpointer.from_conn_string(db_url), PostgresThreadMeta(db_url))
@@ -558,7 +561,8 @@ def create_app(clock: Optional[Callable[[], datetime]] = None, env: Optional[dic
         fast = llm_router.for_task("chat")
         return {"ok": True, "llm": {"chat": type(fast).__name__,
                                     "chat_model": getattr(fast, "model_id", None),
-                                    "question_generation_model": getattr(llm_router.for_task("question_generation"), "model_id", None)},
+                                    "question_generation_model": getattr(llm_router.for_task("question_generation"), "model_id", None),
+                                    "hedge": llm_router.hedge_stats()},
                 "dictionary": "urimalsaem" if dictionary else None,
                 "conversation_store": "postgres" if db_url else "memory",
                 "state_store": "postgres" if sync.persistent else "memory",

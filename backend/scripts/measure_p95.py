@@ -67,6 +67,20 @@ def start_server(port: int) -> subprocess.Popen:
     raise SystemExit("uvicorn did not start")
 
 
+def hedge_delta(before: dict, after: dict) -> dict:
+    """Hedge counters (from /api/health llm.hedge) for the measured requests only: per task calls / hedged
+    (= extra provider calls) / hedge_won, plus the totals."""
+    out, tot = {}, {"calls": 0, "hedged": 0, "hedge_won": 0}
+    for task, a in (after or {}).items():
+        b = (before or {}).get(task, {})
+        d = {k: a.get(k, 0) - b.get(k, 0) for k in tot}
+        out[task] = {"hedge_after_s": a.get("hedge_after_s"), **d}
+        for k in tot:
+            tot[k] += d[k]
+    out["total"] = {**tot, "extra_calls": tot["hedged"]}
+    return out
+
+
 def setup_child(c: httpx.Client) -> str:
     ci = f"p95-{time.time_ns()}"
     tok = c.post("/api/dev/verify", json={"ci": ci}).json()["verification_token"]
@@ -112,7 +126,9 @@ def main() -> int:
             health = c.get("/api/health").json()
             cid = setup_child(c)
             ask(c, cid, "一은 무슨 뜻이에요?")  # warm-up (connection + model client init), not counted
+            hedge0 = (c.get("/api/health").json().get("llm") or {}).get("hedge") or {}
             samples = [ask(c, cid, QUESTIONS[i % len(QUESTIONS)]) for i in range(a.n)]
+            hedge1 = (c.get("/api/health").json().get("llm") or {}).get("hedge") or {}
     finally:
         if proc:
             proc.terminate()
@@ -129,13 +145,14 @@ def main() -> int:
         "errors": sum(1 for s in samples if s["status"] not in ("answered", "unknown")),
         "pass": bool(ft) and len(ft) == len(samples) and p95(ft) < SLO_SECONDS,
         "valid_for_ac9": real,
+        "hedge": hedge_delta(hedge0, hedge1),
         "note": "first token = first DB-corrected sentence frame (event: token) after the request was sent",
         "samples": samples,
     }
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     Path(a.out).write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({k: out[k] for k in ("real_bedrock", "sample_size", "first_token_p50_s",
-                                          "first_token_p95_s", "first_token_max_s", "errors", "pass")}))
+                                          "first_token_p95_s", "first_token_max_s", "errors", "pass", "hedge")}))
     return 0
 
 

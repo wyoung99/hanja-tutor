@@ -7,7 +7,8 @@ set is to prove the real calls work.
 
 Calls per run (approx.): Haiku 4.5 1 chat + 1 classifier; Sonnet 4.6 1 question generation; 우리말샘 1 lookup;
 p95 run on a local uvicorn: 1 warm-up + 30 measured questions, each = 1 Haiku classifier call + 1 Haiku
-streamed answer -> ~22 Haiku calls. Total ~25 Bedrock calls + 1 dictionary call. The 114-case labelled
+streamed answer (run concurrently) -> ~62 Haiku calls, plus one duplicate per hedged call (LLM_HEDGE_AFTER_S;
+the hedge counts are written to reports/p95-eval.json). Total ~25 Bedrock calls + 1 dictionary call. The 114-case labelled
 safety set is NOT part of this (it stays in ``bedrock_live``).
 """
 import json
@@ -114,7 +115,9 @@ def test_p95_first_token_under_3s_on_local_uvicorn(live_env):
             health = c.get("/api/health").json()
             cid = m.setup_child(c)
             m.ask(c, cid, "一은 무슨 뜻이에요?")  # warm-up, not counted
+            hedge0 = (c.get("/api/health").json().get("llm") or {}).get("hedge") or {}
             samples = [m.ask(c, cid, m.QUESTIONS[i % len(m.QUESTIONS)]) for i in range(P95_N)]
+            hedge1 = (c.get("/api/health").json().get("llm") or {}).get("hedge") or {}
     finally:
         proc.terminate()
         proc.wait(timeout=30)
@@ -126,7 +129,8 @@ def test_p95_first_token_under_3s_on_local_uvicorn(live_env):
            "first_token_p50_s": sorted(ft)[len(ft) // 2] if ft else None, "first_token_p95_s": p95,
            "first_token_max_s": max(ft) if ft else None, "slo_s": m.SLO_SECONDS,
            "errors": sum(1 for s in samples if s["status"] not in ("answered", "unknown")),
-           "pass": bool(real and ft and len(ft) == len(samples) and p95 < m.SLO_SECONDS), "samples": samples}
+           "pass": bool(real and ft and len(ft) == len(samples) and p95 < m.SLO_SECONDS),
+           "hedge": m.hedge_delta(hedge0, hedge1), "samples": samples}
     P95_OUT.parent.mkdir(parents=True, exist_ok=True)
     P95_OUT.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
     assert real, f"server did not use Bedrock (LLM_CONFIG missing in {_dotenv()}?): {health.get('llm')}"
